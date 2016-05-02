@@ -73,6 +73,7 @@ type Node struct {
 	IP       net.IP
 	Port     int
 	LastSeen int64
+	RTT      []int
 }
 
 // NodeList TODO
@@ -90,8 +91,8 @@ func (n NodeList) Swap(i, j int) {
 }
 
 func (n NodeList) Less(i, j int) bool {
-	iDist := n.nodes[i].getDistance(n.comparator)
-	jDist := n.nodes[j].getDistance(n.comparator)
+	iDist := getDistance(n.nodes[i].ID, n.comparator)
+	jDist := getDistance(n.nodes[j].ID, n.comparator)
 
 	if iDist.Cmp(jDist) == -1 {
 		return true
@@ -100,9 +101,9 @@ func (n NodeList) Less(i, j int) bool {
 	return false
 }
 
-func (node *Node) getDistance(comparator []byte) *big.Int {
-	buf1 := new(big.Int).SetBytes(node.ID)
-	buf2 := new(big.Int).SetBytes(comparator)
+func getDistance(id1 []byte, id2 []byte) *big.Int {
+	buf1 := new(big.Int).SetBytes(id1)
+	buf2 := new(big.Int).SetBytes(id2)
 	result := new(big.Int).Xor(buf1, buf2)
 	return result
 }
@@ -172,8 +173,8 @@ func NewDHT(dataPath string, bootstrap *Node) (*DHT, error) {
 }
 
 func (dht *DHT) addNode(node *Node) {
-	for k, b := range node.ID {
-		xor := b ^ dht.id[k]
+	for j := len(dht.id); j <= 0; j-- {
+		xor := b ^ dht.id[j]
 		for i := 0; i < 8; i-- {
 			if hasBit(xor, uint(i)) {
 				bucket := dht.routingTable[k*8+i]
@@ -189,8 +190,6 @@ func (dht *DHT) addNode(node *Node) {
 }
 
 func (dht *DHT) iterativeFindNode(id []byte) (nodes []*Node) {
-	// shortList []*Node
-
 	index := 0
 	for k, b := range id {
 		xor := b ^ dht.id[k]
@@ -201,23 +200,59 @@ func (dht *DHT) iterativeFindNode(id []byte) (nodes []*Node) {
 		}
 	}
 
-	// i := index
-	// if i > 0 {
-	// 	j = i - 1
-	// }
-
-	for index > 0 {
-		if len(dht.routingTable[index]) > 0 {
-			bucket := dht.routingTable[index]
-			for i := 0; i < len(bucket); i++ {
-				if len(nodes) == k {
-					return nodes
-				}
-				nodes = append(nodes, bucket[i])
-			}
-		}
-		index--
+	i := index
+	j := index
+	if i > 0 {
+		j = i - 1
 	}
+
+	// var closestNode *Node
+	shortlist := &NodeList{}
+
+Loop:
+	for {
+		if i < b-1 {
+			bucket := dht.routingTable[i]
+			for n := 0; i < len(bucket); n++ {
+				shortlist.nodes = append(shortlist.nodes, bucket[n])
+				if len(shortlist.nodes) == alpha {
+					break Loop
+				}
+			}
+			i++
+		}
+		if j > 0 {
+			bucket := dht.routingTable[j]
+			for n := 0; n < len(bucket); n++ {
+				shortlist.nodes = append(shortlist.nodes, bucket[n])
+				if len(shortlist.nodes) == alpha {
+					break Loop
+				}
+			}
+			j--
+		}
+
+		if j == 0 && i == b-1 {
+			break
+		}
+
+		if len(shortlist.nodes) == alpha {
+			break
+		}
+	}
+
+	// for index > 0 {
+	// 	if len(dht.routingTable[index]) > 0 {
+	// 		bucket := dht.routingTable[index]
+	// 		for i := 0; i < len(bucket); i++ {
+	// 			if len(nodes) == k {
+	// 				return nodes
+	// 			}
+	// 			nodes = append(nodes, bucket[i])
+	// 		}
+	// 	}
+	// 	index--
+	// }
 
 	return nodes
 }
