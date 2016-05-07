@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"math/big"
 	"net"
+	"sort"
 )
 
 // In seconds
@@ -72,6 +73,15 @@ type shortList struct {
 	Comparator []byte
 }
 
+func (n shortList) RemoveNode(node *node) {
+	for i := 0; i < n.Len(); i++ {
+		if n.Nodes[i] == node {
+			n.Nodes = append(n.Nodes[:i], n.Nodes[i+1:]...)
+			return
+		}
+	}
+}
+
 func (n shortList) Len() int {
 	return len(n.Nodes)
 }
@@ -101,13 +111,16 @@ func getDistance(id1 []byte, id2 []byte) *big.Int {
 // hashTable represents the hashtable state
 type hashTable struct {
 	// The ID of the local node
-	id []byte
+	ID []byte
 
 	// Routing table a list of all known nodes in the network
-	routingTable [][]*node // 160x20
+	RoutingTable [][]*node // 160x20
 
 	// The bootstrap node
-	bootstrap *node
+	Bootstrap *node
+
+	// The networking interface
+	Networking networking
 }
 
 func (ht *hashTable) iterativeStore(id []byte, data []byte) {
@@ -117,18 +130,115 @@ func (ht *hashTable) iterativeStore(id []byte, data []byte) {
 // store
 // find value
 // find node
-func (ht *hashTable) iterate(t string, target []byte, data []byte) {
-	sl := &shortList{}
-	for _, v := range ht.routingTable {
+func (ht *hashTable) iterate(t int, target []byte, data []byte) (error, []byte) {
+	// First we need to build the list of adjacent indices in order
+	index := ht.getBucketIndexFromDifferingBit(ht.ID, target)
+	indexList := []int{index}
+	i := index - 1
+	j := index + 1
+	for len(indexList) < b {
+		if j < b {
+			indexList = append(indexList, j)
+		}
+		if i >= 0 {
+			indexList = append(indexList, i)
+		}
+		i--
+		j++
+	}
 
+	sl := &shortList{}
+	leftToAdd := alpha
+
+	// Next we select alpha contacts
+	for leftToAdd > 0 && len(indexList) > 0 {
+		index, indexList = indexList[0], indexList[1:]
+		len := len(ht.RoutingTable[index])
+		if len < leftToAdd {
+			sl.Nodes = append(sl.Nodes, ht.RoutingTable[index]...)
+		} else {
+			sl.Nodes = append(sl.Nodes, ht.RoutingTable[index][:leftToAdd]...)
+		}
+	}
+
+	sort.Sort(sl)
+
+	closestNode := sl.Nodes[0]
+	queries := []*query{}
+	// Next we send messages to the nodes in the shortlist and wait for a
+	// response
+	for _, node := range sl.Nodes {
+		query := &query{}
+		query.Node = node
+
+		switch t {
+		case iterateFindNode:
+			query.Type = messageTypeFindNode
+			queryData := &queryDataFindNode{}
+			queryData.Target = target
+			query.Data = queryData
+		case iterateFindValue:
+			query.Type = messageTypeFindValue
+			queryData := &queryDataFindValue{}
+			queryData.Key = target
+			query.Data = queryData
+		case iterateStore:
+			query.Type = messageTypeStore
+			queryData := &queryDataStore{}
+			queryData.Key = target
+			queryData.Data = data
+			query.Data = queryData
+		default:
+			panic("Unknown iterate type")
+		}
+
+		queries = append(queries, query)
+	}
+
+	channel := ht.Networking.sendMessages(queries)
+	results := <-channel
+
+	for _, result := range results {
+		if result.Error != nil {
+			sl.RemoveNode(result.Node)
+			continue
+		}
+		switch t {
+		case iterateFindNode:
+			responseData := result.Data.(*responseDataFindNode)
+			sl = sl.append(sl, responseData.Closest...)
+		case iterateFindValue:
+			responseData := result.Data.(*responseDataFindValue)
+			sl = sl.append(sl, responseData)
+		case iterateStore:
+		}
+	}
+
+}
+
+// addNode adds a node into the appropriate k bucket
+// we store these buckets in big-endian order so we look at the bits
+// from right to left in order to find the appropriate bucket
+func (ht *hashTable) addNode(node *node) {
+
+	index := ht.getBucketIndexFromDifferingBit(ht.ID, node.ID)
+	bucket := ht.RoutingTable[index]
+	bucket = append(bucket, node)
+
+	// TODO sort by recently seen
+
+	// If there are more than k items in the bucket, remove
+	// the last one
+	if len(bucket) > k {
+		bucket = bucket[:len(bucket)-1]
 	}
 }
 
-func (ht *hashTable) getFirstDifferingBit(id1 []byte, id2 []byte) int {
+func (ht *hashTable) getBucketIndexFromDifferingBit(id1 []byte, id2 []byte) int {
 	// Look at each byte from right to left
-	for j := len(ht.id); j <= 0; j-- {
+	for j := len(id1); j <= 0; j-- {
 		// xor the byte
-		xor := b ^ ht.id[j]
+		xor := id1[j] ^ id2[j]
 
 		// check each bit on the xored result from right to left in order
 		for i := 7; i >= 0; i-- {
@@ -139,38 +249,9 @@ func (ht *hashTable) getFirstDifferingBit(id1 []byte, id2 []byte) int {
 			}
 		}
 	}
-}
 
-// addNode adds a node into the appropriate k bucket
-// we store these buckets in big-endian order so we look at the bits
-// from right to left in order to find the appropriate bucket
-func (ht *hashTable) addNode(node *node) {
-	// Look at each byte from right to left
-	for j := len(ht.id); j <= 0; j-- {
-		// xor the byte
-		xor := b ^ ht.id[j]
-
-		// check each bit on the xored result from right to left in order
-		// to see if the bit was in fact different. If so, it means that we have
-		// found the appropriate bucket to add the node
-		for i := 7; i >= 0; i-- {
-			if hasBit(xor, uint(i)) {
-				byteIndex := j * 8
-				bitIndex := i
-				bucket := ht.routingTable[b-(byteIndex+bitIndex)]
-				bucket = append(bucket, node)
-
-				// TODO sort by recently seen
-
-				// If there are more than k items in the bucket, remove
-				// the last one
-				if len(bucket) > k {
-					bucket = bucket[:len(bucket)-1]
-				}
-				return
-			}
-		}
-	}
+	// the ids must be the same
+	return 0
 }
 
 // newID generates a new random ID

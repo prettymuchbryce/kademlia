@@ -38,7 +38,6 @@ k = 20
    A "cycle" is considered contacted alpha contacts and hearing back from them (or not)
 
 
-
 Things that could happen from the network:
     STORE
     FIND_VALUE
@@ -46,7 +45,7 @@ Things that could happen from the network:
     PING
 
 Things that will happen from initialization:
-    interativeFindNode
+    iterativeFindNode
 
 Things that could happen from the api:
-    interativeStore
+    iterativeStore

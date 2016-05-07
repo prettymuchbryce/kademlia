@@ -8,10 +8,9 @@ const (
 )
 
 type query struct {
-	ID    []byte
-	Type  string
-	Token int32
-	Data  interface{}
+	Type string
+	Node *node
+	Data interface{}
 }
 
 type queryDataFindNode struct {
@@ -19,7 +18,7 @@ type queryDataFindNode struct {
 }
 
 type queryDataFindValue struct {
-	Key int32
+	Key []byte
 }
 
 type queryDataStore struct {
@@ -28,9 +27,8 @@ type queryDataStore struct {
 }
 
 type response struct {
-	Token int64
+	Node  *node
 	Error error
-	ID    []byte
 	Data  interface{}
 }
 
@@ -48,7 +46,7 @@ type responseDataStore struct {
 }
 
 // Network TODO
-type network interface {
+type networking interface {
 	sendMessages([]*query) chan ([]*response)
 }
 
