@@ -1,7 +1,9 @@
 package dht
 
 import (
+	"bytes"
 	"crypto/rand"
+	"errors"
 	"math/big"
 	"net"
 	"sort"
@@ -29,6 +31,10 @@ const (
 	iterateStore = iota
 	iterateFindNode
 	iterateFindValue
+)
+
+var (
+	errorValueNotFound = errors.New("Value not found")
 )
 
 const (
@@ -73,7 +79,7 @@ type shortList struct {
 	Comparator []byte
 }
 
-func (n shortList) RemoveNode(node *node) {
+func (n *shortList) RemoveNode(node *node) {
 	for i := 0; i < n.Len(); i++ {
 		if n.Nodes[i] == node {
 			n.Nodes = append(n.Nodes[:i], n.Nodes[i+1:]...)
@@ -82,15 +88,29 @@ func (n shortList) RemoveNode(node *node) {
 	}
 }
 
-func (n shortList) Len() int {
+func (n *shortList) AppendUnique(nodes []*node) {
+	for _, vv := range nodes {
+		exists := false
+		for _, v := range n.Nodes {
+			if bytes.Compare(v.ID, vv.ID) == 0 {
+				exists = true
+			}
+		}
+		if !exists {
+			n.Nodes = append(n.Nodes, vv)
+		}
+	}
+}
+
+func (n *shortList) Len() int {
 	return len(n.Nodes)
 }
 
-func (n shortList) Swap(i, j int) {
+func (n *shortList) Swap(i, j int) {
 	n.Nodes[i], n.Nodes[j] = n.Nodes[j], n.Nodes[i]
 }
 
-func (n shortList) Less(i, j int) bool {
+func (n *shortList) Less(i, j int) bool {
 	iDist := getDistance(n.Nodes[i].ID, n.Comparator)
 	jDist := getDistance(n.Nodes[j].ID, n.Comparator)
 
@@ -116,22 +136,23 @@ type hashTable struct {
 	// Routing table a list of all known nodes in the network
 	RoutingTable [][]*node // 160x20
 
-	// The bootstrap node
-	Bootstrap *node
-
 	// The networking interface
 	Networking networking
 }
 
-func (ht *hashTable) iterativeStore(id []byte, data []byte) {
+func newHashTable() *hashTable {
+	ht := &hashTable{}
 
+	for i := 0; i < b; i++ {
+		ht.RoutingTable = append(ht.RoutingTable, []*node{})
+	}
+
+	return ht
 }
 
-// store
-// find value
-// find node
-func (ht *hashTable) iterate(t int, target []byte, data []byte) (error, []byte) {
-	// First we need to build the list of adjacent indices in order
+func (ht *hashTable) getClosestContacts(num int, target []byte) *shortList {
+	// First we need to build the list of adjacent indices to our target
+	// in order
 	index := ht.getBucketIndexFromDifferingBit(ht.ID, target)
 	indexList := []int{index}
 	i := index - 1
@@ -148,9 +169,10 @@ func (ht *hashTable) iterate(t int, target []byte, data []byte) (error, []byte) 
 	}
 
 	sl := &shortList{}
-	leftToAdd := alpha
 
-	// Next we select alpha contacts
+	leftToAdd := num
+
+	// Next we select alpha contacts and add them to the short list
 	for leftToAdd > 0 && len(indexList) > 0 {
 		index, indexList = indexList[0], indexList[1:]
 		len := len(ht.RoutingTable[index])
@@ -163,57 +185,135 @@ func (ht *hashTable) iterate(t int, target []byte, data []byte) (error, []byte) 
 
 	sort.Sort(sl)
 
+	return sl
+}
+
+// Iterate does an iterative search through the network. This can be done
+// for multiple reasons. These reasons include:
+//     iterativeStore - Used to store new information in the network.
+//     iterativeFindNode - Used to bootstrap the network
+//     iterativeFindValue - Used to find a value among the network given a key
+func (ht *hashTable) iterate(t int, target []byte, data []byte) ([]byte, error) {
+	sl := ht.getClosestContacts(alpha, target)
+
+	// We keep track of nodes contacted so far. We don't contact the same node
+	// twice.
+	var contacted = make(map[string]bool)
+
+	// We keep a reference to the closestNode. If after performing a search
+	// we do not find a closer node, we stop searching.
 	closestNode := sl.Nodes[0]
-	queries := []*query{}
-	// Next we send messages to the nodes in the shortlist and wait for a
-	// response
-	for _, node := range sl.Nodes {
-		query := &query{}
-		query.Node = node
 
-		switch t {
-		case iterateFindNode:
-			query.Type = messageTypeFindNode
-			queryData := &queryDataFindNode{}
-			queryData.Target = target
-			query.Data = queryData
-		case iterateFindValue:
-			query.Type = messageTypeFindValue
-			queryData := &queryDataFindValue{}
-			queryData.Key = target
-			query.Data = queryData
-		case iterateStore:
-			query.Type = messageTypeStore
-			queryData := &queryDataStore{}
-			queryData.Key = target
-			queryData.Data = data
-			query.Data = queryData
-		default:
-			panic("Unknown iterate type")
+	for {
+		queries := []*query{}
+		// Next we send messages to the first (closest) alpha nodes in the
+		// shortlist and wait for a response
+		for i, node := range sl.Nodes {
+			// Contact only alpha nodes
+			if i >= alpha {
+				break
+			}
+
+			// Don't contact nodes already contacted
+			if contacted[string(node.ID)] == true {
+				continue
+			}
+
+			contacted[string(node.ID)] = true
+			query := &query{}
+			query.Node = node
+
+			switch t {
+			case iterateFindNode:
+				query.Type = messageTypeFindNode
+				queryData := &queryDataFindNode{}
+				queryData.Target = target
+				query.Data = queryData
+			case iterateFindValue:
+				query.Type = messageTypeFindValue
+				queryData := &queryDataFindValue{}
+				queryData.Key = target
+				query.Data = queryData
+			case iterateStore:
+				query.Type = messageTypeStore
+				queryData := &queryDataStore{}
+				queryData.Key = target
+				queryData.Data = data
+				query.Data = queryData
+			default:
+				panic("Unknown iterate type")
+			}
+
+			queries = append(queries, query)
 		}
 
-		queries = append(queries, query)
+		// Send the async queries and wait for a response
+		channel := ht.Networking.sendMessages(queries)
+		results := <-channel
+
+		for _, result := range results {
+			if result.Error != nil {
+				sl.RemoveNode(result.Node)
+				continue
+			}
+			switch t {
+			case iterateFindNode:
+				responseData := result.Data.(*responseDataFindNode)
+				for _, node := range responseData.Closest {
+					ht.addNode(node)
+				}
+				sl.AppendUnique(responseData.Closest)
+			case iterateFindValue:
+				responseData := result.Data.(*responseDataFindValue)
+				if responseData.Value != nil {
+					return responseData.Value, nil
+				}
+				for _, node := range responseData.Closest {
+					ht.addNode(node)
+				}
+				sl.AppendUnique(responseData.Closest)
+			case iterateStore:
+				responseData := result.Data.(*responseDataFindNode)
+				for _, node := range responseData.Closest {
+					ht.addNode(node)
+				}
+				sl.AppendUnique(responseData.Closest)
+			}
+		}
+
+		sort.Sort(sl)
+
+		// If closestNode is unchanged then we are done
+		if bytes.Compare(sl.Nodes[0].ID, closestNode.ID) == 0 {
+			// We are done
+			switch t {
+			case iterateFindNode:
+				return nil, nil
+			case iterateFindValue:
+				return nil, errorValueNotFound
+			case iterateStore:
+				var queries []*query
+				for i, n := range sl.Nodes {
+					if i >= k {
+						return nil, nil
+					}
+
+					query := &query{}
+					query.Node = n
+					query.Type = messageTypeStore
+					queryData := &queryDataStore{}
+					queryData.Data = data
+					queryData.Key = target
+					query.Data = queryData
+					queries = append(queries, query)
+				}
+				ht.Networking.sendMessages(queries)
+				return nil, nil
+			}
+		} else {
+			closestNode = sl.Nodes[0]
+		}
 	}
-
-	channel := ht.Networking.sendMessages(queries)
-	results := <-channel
-
-	for _, result := range results {
-		if result.Error != nil {
-			sl.RemoveNode(result.Node)
-			continue
-		}
-		switch t {
-		case iterateFindNode:
-			responseData := result.Data.(*responseDataFindNode)
-			sl = sl.append(sl, responseData.Closest...)
-		case iterateFindValue:
-			responseData := result.Data.(*responseDataFindValue)
-			sl = sl.append(sl, responseData)
-		case iterateStore:
-		}
-	}
-
 }
 
 // addNode adds a node into the appropriate k bucket
@@ -223,20 +323,32 @@ func (ht *hashTable) addNode(node *node) {
 
 	index := ht.getBucketIndexFromDifferingBit(ht.ID, node.ID)
 	bucket := ht.RoutingTable[index]
+
+	// Make sure node doesn't already exist
+	for _, v := range bucket {
+		if bytes.Compare(v.ID, node.ID) == 0 {
+			return
+		}
+	}
+
 	bucket = append(bucket, node)
 
 	// TODO sort by recently seen
 
 	// If there are more than k items in the bucket, remove
 	// the last one
+	// TODO The Kademlia paper suggests pinging the last node first, and
+	// leaving it if it responds. That is - we have a preference for old contacts
 	if len(bucket) > k {
 		bucket = bucket[:len(bucket)-1]
 	}
+
+	ht.RoutingTable[index] = bucket
 }
 
 func (ht *hashTable) getBucketIndexFromDifferingBit(id1 []byte, id2 []byte) int {
 	// Look at each byte from right to left
-	for j := len(id1); j <= 0; j-- {
+	for j := 0; j < len(id1); j++ {
 		// xor the byte
 		xor := id1[j] ^ id2[j]
 
@@ -244,13 +356,14 @@ func (ht *hashTable) getBucketIndexFromDifferingBit(id1 []byte, id2 []byte) int 
 		for i := 7; i >= 0; i-- {
 			if hasBit(xor, uint(i)) {
 				byteIndex := j * 8
-				bitIndex := i
-				return b - (byteIndex + bitIndex)
+				bitIndex := 7 - i
+				return b - (byteIndex + bitIndex) - 1
 			}
 		}
 	}
 
 	// the ids must be the same
+	// should never happen
 	return 0
 }
 

@@ -50,6 +50,23 @@ type networking interface {
 	sendMessages([]*query) chan ([]*response)
 }
 
+type mockNetworking struct {
+	recv chan ([]*query)
+	send chan ([]*response)
+}
+
+func newMockNetworking() *mockNetworking {
+	net := &mockNetworking{}
+	net.recv = make(chan ([]*query))
+	net.send = make(chan ([]*response))
+	return net
+}
+
+func (net *mockNetworking) sendMessages(q []*query) chan ([]*response) {
+	net.recv <- q
+	return net.send
+}
+
 //
 // Listen(net string, laddr *net.UDPAddr) (Connection, error)
 

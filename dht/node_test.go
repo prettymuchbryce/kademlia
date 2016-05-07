@@ -1,6 +1,7 @@
 package dht
 
 import (
+	"math"
 	"math/big"
 	"sort"
 	"testing"
@@ -30,10 +31,63 @@ func TestDistanceMetric(t *testing.T) {
 	value = getDistance(n.ID, v)
 
 	// (2^160)-1 = max possible distance
-	maxDistance := new(big.Int).Exp(big.NewInt(160), big.NewInt(2), nil)
+	maxDistance := new(big.Int).Exp(big.NewInt(2), big.NewInt(160), nil)
 	maxDistance.Sub(maxDistance, big.NewInt(1))
 
 	assert.Equal(t, maxDistance, value)
+}
+
+// A new node and bootstrap it. All nodes in the network know of a single node
+// closer to the original node. This continues until every k bucket is occupied.
+func TestFindNodeAllBuckets(t *testing.T) {
+	ht := newHashTable()
+	id := getIDWithValues(0)
+	ht.ID = id
+
+	net := newMockNetworking()
+	bootstrapNode := &node{}
+	bootstrapNode.ID = getZerodIDWithNthByte(0, byte(math.Pow(2, 7)))
+	ht.Networking = net
+
+	ht.addNode(bootstrapNode)
+
+	var k = 0
+	var i = 6
+
+	go func() {
+		for {
+			queries := <-net.recv
+			responses := []*response{}
+			for _, v := range queries {
+				r := &response{}
+				n := &node{}
+				n.ID = v.Node.ID
+				r.Node = n
+
+				responseData := &responseDataFindNode{}
+				responseData.Closest = []*node{&node{ID: getZerodIDWithNthByte(k, byte(math.Pow(2, float64(i))))}}
+				i--
+				if i < 0 {
+					i = 7
+					k++
+				}
+				if k > 19 {
+					k = 19
+				}
+
+				r.Data = responseData
+				responses = append(responses, r)
+			}
+			net.send <- responses
+		}
+	}()
+
+	ht.iterate(iterateFindNode, id, nil)
+
+	for _, v := range ht.RoutingTable {
+		assert.Equal(t, 1, len(v))
+	}
+
 }
 
 func TestShortList(t *testing.T) {
