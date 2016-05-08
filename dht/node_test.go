@@ -37,8 +37,9 @@ func TestDistanceMetric(t *testing.T) {
 	assert.Equal(t, maxDistance, value)
 }
 
-// A new node and bootstrap it. All nodes in the network know of a single node
-// closer to the original node. This continues until every k bucket is occupied.
+// Create a new node and bootstrap it. All nodes in the network know of a
+// single node closer to the original node. This continues until every k bucket
+// is occupied.
 func TestFindNodeAllBuckets(t *testing.T) {
 	ht := newHashTable()
 	id := getIDWithValues(0)
@@ -87,7 +88,6 @@ func TestFindNodeAllBuckets(t *testing.T) {
 	for _, v := range ht.RoutingTable {
 		assert.Equal(t, 1, len(v))
 	}
-
 }
 
 func TestShortList(t *testing.T) {
