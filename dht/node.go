@@ -352,11 +352,11 @@ func (ht *hashTable) getBucketIndexFromDifferingBit(id1 []byte, id2 []byte) int 
 		// xor the byte
 		xor := id1[j] ^ id2[j]
 
-		// check each bit on the xored result from right to left in order
-		for i := 7; i >= 0; i-- {
+		// check each bit on the xored result from left to right in order
+		for i := 0; i < 8; i++ {
 			if hasBit(xor, uint(i)) {
 				byteIndex := j * 8
-				bitIndex := 7 - i
+				bitIndex := i
 				return b - (byteIndex + bitIndex) - 1
 			}
 		}
@@ -376,7 +376,13 @@ func newID() ([]byte, error) {
 
 // Simple helper function to determine the value of a particular
 // bit in a byte by index
+
+// Example:
+// number:  1
+// bits:    00000001
+// pos:     01234567
 func hasBit(n byte, pos uint) bool {
+	pos = 7 - pos
 	val := n & (1 << pos)
 	return (val > 0)
 }

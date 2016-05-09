@@ -37,6 +37,18 @@ func TestDistanceMetric(t *testing.T) {
 	assert.Equal(t, maxDistance, value)
 }
 
+func TestHasBit(t *testing.T) {
+	for i := 0; i < 8; i++ {
+		assert.Equal(t, true, hasBit(byte(255), uint(i)))
+	}
+
+	assert.Equal(t, true, hasBit(byte(1), uint(7)))
+
+	for i := 0; i < 8; i++ {
+		assert.Equal(t, false, hasBit(byte(0), uint(i)))
+	}
+}
+
 // Create a new node and bootstrap it. All nodes in the network know of a
 // single node closer to the original node. This continues until every k bucket
 // is occupied.
