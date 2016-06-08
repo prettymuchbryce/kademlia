@@ -4,6 +4,7 @@ package dht
 
 // DHT TODO
 type DHT struct {
+	queue *queue
 }
 
 // Options TODO

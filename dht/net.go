@@ -1,107 +1,127 @@
 package dht
 
-const (
-	messageTypePing      = "PING"
-	messageTypeStore     = "STORE"
-	messageTypeFindNode  = "FIND_NODE"
-	messageTypeFindValue = "FIND_VALUE"
+import (
+	"errors"
+	"fmt"
+	"net"
+	"strconv"
+
+	"github.com/anacrolix/utp"
 )
-
-type query struct {
-	Type string
-	Node *node
-	Data interface{}
-}
-
-type queryDataFindNode struct {
-	Target []byte
-}
-
-type queryDataFindValue struct {
-	Key []byte
-}
-
-type queryDataStore struct {
-	Data []byte
-	Key  []byte
-}
-
-type response struct {
-	Node  *node
-	Error error
-	Data  interface{}
-}
-
-type responseDataFindNode struct {
-	Closest []*node
-}
-
-type responseDataFindValue struct {
-	Closest []*node
-	Value   []byte
-}
-
-type responseDataStore struct {
-	Success bool
-}
 
 // Network TODO
 type networking interface {
-	sendMessages([]*query) chan ([]*response)
+	sendMessages([]*message) chan ([]*message)
+	getMessage() *message
 }
 
-type mockNetworking struct {
-	recv chan ([]*query)
-	send chan ([]*response)
+type realNetworking struct {
+	socket     *utp.Socket
+	recvChan   chan (*message)
+	sendChan   chan ([]*message)
+	address    *net.UDPAddr
+	broadcast  *broadcast
+	connection *net.UDPConn
 }
 
-func newMockNetworking() *mockNetworking {
-	net := &mockNetworking{}
-	net.recv = make(chan ([]*query))
-	net.send = make(chan ([]*response))
+func newNetworking() *realNetworking {
+	net := &realNetworking{}
+	net.recvChan = make(chan (*message))
+	net.sendChan = make(chan ([]*message))
 	return net
 }
 
-func (net *mockNetworking) sendMessages(q []*query) chan ([]*response) {
-	net.recv <- q
-	return net.send
+func (rn *realNetworking) getMessage() *message {
+	id, c := rn.broadcast.addListener("recv")
+	for {
+		msg := <-c
+		rn.broadcast.removeListener(id, "recv")
+		return msg.(*message)
+	}
 }
 
-//
-// Listen(net string, laddr *net.UDPAddr) (Connection, error)
+func (rn *realNetworking) sendMessages(msgs []*message) []*message {
+	id, c := rn.broadcast.addListener("recv")
+	rn.sendChan <- msgs
+	var result []*message
+	for {
+		msg := <-c
+		for _, m := range msgs {
+			if m.ID == msg.(*message).ID {
+				result = append(result, msg.(*message))
+				if len(result) == len(msgs) {
+					rn.broadcast.removeListener(id, "recv")
+					return result
+				}
+			}
+		}
+	}
+}
 
-//
-// // Connection TODO
-// type Connection interface {
-// 	ReadFromUDP(b []byte) (int, *net.UDPAddr, error)
-// 	Close() error
-// }
-//
-// // MockConnection TODO
-// type MockConnection struct {
-// }
-//
-// // MockNetwork TODO
-// type MockNetwork struct {
-// }
-//
-// // NetworkImpl TODO
-// type NetworkImpl struct {
-// }
-//
-// type queryResponseChannelData struct {
-// 	response *response
-// 	err      error
-// }
-//
-// func doQuery(nodes []*Node, query *query) chan *queryResponseChannelData {
-// 	c := make(chan *queryResponseChannelData)
-//
-// 	for i := 0; i < len(nodes); i++ {
-// 		go func(node *Node) {
-//
-// 		}(nodes[i])
-// 	}
-//
-// 	return c
-// }
+func (rn *realNetworking) init(host string, port string) error {
+	socket, err := utp.NewSocket("udp", host+":"+port)
+	if err != nil {
+		return err
+	}
+
+	rn.broadcast.init()
+
+	rn.socket = socket
+
+	return nil
+}
+
+func (rn *realNetworking) send(msg *message) error {
+	if rn.socket == nil {
+		panic(errors.New("Not initialized."))
+	}
+	conn, err := rn.socket.Dial(msg.Node.IP.String() + ":" + strconv.Itoa(msg.Node.Port))
+	if err != nil {
+		return err
+	}
+
+	data, err := serializeMessage(msg)
+	if err != nil {
+		return err
+	}
+
+	_, err = conn.Write(data)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (rn *realNetworking) listen() error {
+	if rn.socket == nil {
+		panic(errors.New("Not initialized."))
+	}
+	for {
+		conn, err := rn.socket.Accept()
+		if err != nil {
+			fmt.Println(err)
+		}
+
+		go func() {
+			for {
+				msg := <-rn.sendChan
+				rn.sendMessages(msg)
+			}
+		}()
+
+		go func() {
+			for {
+				// Wait for messages
+				msg, err := deserializeMessage(conn)
+				if err != nil {
+					fmt.Println(err)
+					continue
+				}
+				rn.broadcast.dispatch("recv", msg)
+			}
+		}()
+	}
+
+	return nil
+}

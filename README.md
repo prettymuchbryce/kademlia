@@ -1,3 +1,29 @@
+Queue [][][][][][][][]
+         ^   ^
+Network -|   |
+User input --|
+
+
+
+
+Queue: [][][][][][]
+Network: Ping, Store, find node, find value
+Internal: Ping
+API: Store, Find value, Bootstrap
+
+
+
+
+
+API says find node. Tells network to send async requests.
+Network sends async requests
+meanwhile a request comes in to find value. it should wait until API is done ?
+
+
+What's in the queue ? Net msgs or general TODOs / function calls ?
+
+
+
 http://xlattice.sourceforge.net/components/protocol/kademlia/specs.html#FIND_VALUE
 
 https://en.wikipedia.org/wiki/Kademlia
