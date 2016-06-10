@@ -11,14 +11,13 @@ import (
 // single node closer to the original node. This continues until every k bucket
 // is occupied.
 func TestFindNodeAllBuckets(t *testing.T) {
-	ht := newHashTable()
+	net := newMockNetworking()
+	ht := newHashTable(&MemoryStore{}, net)
 	id := getIDWithValues(0)
 	ht.ID = id
 
-	net := newMockNetworking()
 	bootstrapNode := &node{}
 	bootstrapNode.ID = getZerodIDWithNthByte(0, byte(math.Pow(2, 7)))
-	ht.Networking = net
 
 	ht.addNode(bootstrapNode)
 

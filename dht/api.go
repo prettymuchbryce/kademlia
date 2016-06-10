@@ -1,10 +1,12 @@
 package dht
 
+import "crypto/sha256"
+
 // Public interface
 
 // DHT TODO
 type DHT struct {
-	queue *queue
+	ht *hashTable
 }
 
 // Options TODO
@@ -13,13 +15,16 @@ type Options struct {
 }
 
 // New TODO
-func (dht *DHT) New(options *Options) *DHT {
-	return nil
+func (dht *DHT) New(store Store, options *Options) *DHT {
+	dht.ht = newHashTable(store, &realNetworking{})
+	return dht
 }
 
 // Store TODO
 func (dht *DHT) Store(data []byte) {
-
+	key := sha256.Sum256(data)
+	dht.ht.Store.Store(key[:], data)
+	go dht.ht.iterate(iterateStore, key[:], data)
 }
 
 // Get TODO

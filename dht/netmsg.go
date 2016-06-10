@@ -31,7 +31,7 @@ type queryDataFindNode struct {
 }
 
 type queryDataFindValue struct {
-	Key []byte
+	Target []byte
 }
 
 type queryDataStore struct {

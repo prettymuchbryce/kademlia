@@ -7,16 +7,19 @@ type mockNetworking struct {
 
 func newMockNetworking() *mockNetworking {
 	net := &mockNetworking{}
+	return net
+}
+
+func (net *mockNetworking) init() {
 	net.recv = make(chan ([]*message))
 	net.send = make(chan ([]*message))
-	return net
 }
 
 func (net *mockNetworking) getMessage() *message {
 	return nil
 }
 
-func (net *mockNetworking) sendMessages(q []*message) chan ([]*message) {
+func (net *mockNetworking) sendMessages(q []*message) []*message {
 	net.recv <- q
-	return net.send
+	return <-net.send
 }

@@ -11,8 +11,9 @@ import (
 
 // Network TODO
 type networking interface {
-	sendMessages([]*message) chan ([]*message)
+	sendMessages([]*message) []*message
 	getMessage() *message
+	init()
 }
 
 type realNetworking struct {
@@ -32,10 +33,9 @@ func newNetworking() *realNetworking {
 }
 
 func (rn *realNetworking) getMessage() *message {
-	id, c := rn.broadcast.addListener("recv")
+	_, c := rn.broadcast.addListener("recv")
 	for {
 		msg := <-c
-		rn.broadcast.removeListener(id, "recv")
 		return msg.(*message)
 	}
 }
@@ -58,13 +58,18 @@ func (rn *realNetworking) sendMessages(msgs []*message) []*message {
 	}
 }
 
-func (rn *realNetworking) init(host string, port string) error {
+func (rn *realNetworking) init() {
+	rn.recvChan = make(chan (*message))
+	rn.sendChan = make(chan ([]*message))
+
+	rn.broadcast.init()
+}
+
+func (rn *realNetworking) createSocket(host string, port string) error {
 	socket, err := utp.NewSocket("udp", host+":"+port)
 	if err != nil {
 		return err
 	}
-
-	rn.broadcast.init()
 
 	rn.socket = socket
 
