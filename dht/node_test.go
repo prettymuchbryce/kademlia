@@ -9,7 +9,7 @@ import (
 )
 
 func TestDistanceMetric(t *testing.T) {
-	n := &node{}
+	n := newNode(&NetworkNode{})
 	n.ID = getIDWithValues(0)
 	assert.Equal(t, 20, len(n.ID))
 
@@ -51,12 +51,12 @@ func TestHasBit(t *testing.T) {
 func TestShortList(t *testing.T) {
 	nl := &shortList{}
 	comparator := getIDWithValues(0)
-	n1 := &node{ID: getZerodIDWithNthByte(19, 1)}
-	n2 := &node{ID: getZerodIDWithNthByte(18, 1)}
-	n3 := &node{ID: getZerodIDWithNthByte(17, 1)}
-	n4 := &node{ID: getZerodIDWithNthByte(16, 1)}
+	n1 := &NetworkNode{ID: getZerodIDWithNthByte(19, 1)}
+	n2 := &NetworkNode{ID: getZerodIDWithNthByte(18, 1)}
+	n3 := &NetworkNode{ID: getZerodIDWithNthByte(17, 1)}
+	n4 := &NetworkNode{ID: getZerodIDWithNthByte(16, 1)}
 
-	nl.Nodes = []*node{n3, n2, n4, n1}
+	nl.Nodes = []*NetworkNode{n3, n2, n4, n1}
 	nl.Comparator = comparator
 
 	sort.Sort(nl)

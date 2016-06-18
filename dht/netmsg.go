@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/gob"
-	"net"
+	"io"
 )
 
 const (
@@ -19,11 +19,12 @@ const (
 )
 
 type message struct {
-	Node  *node
-	ID    [b]byte
-	Error error
-	Type  string
-	Data  interface{}
+	Sender   *NetworkNode
+	Receiver *NetworkNode
+	ID       [b]byte
+	Error    error
+	Type     string
+	Data     interface{}
 }
 
 type queryDataFindNode struct {
@@ -40,16 +41,25 @@ type queryDataStore struct {
 }
 
 type responseDataFindNode struct {
-	Closest []*node
+	Closest []*NetworkNode
 }
 
 type responseDataFindValue struct {
-	Closest []*node
+	Closest []*NetworkNode
 	Value   []byte
 }
 
 type responseDataStore struct {
 	Success bool
+}
+
+func netMsgInit() {
+	gob.Register(&queryDataFindNode{})
+	gob.Register(&queryDataFindValue{})
+	gob.Register(&queryDataStore{})
+	gob.Register(&responseDataFindNode{})
+	gob.Register(&responseDataFindValue{})
+	gob.Register(&responseDataStore{})
 }
 
 func serializeMessage(q *message) ([]byte, error) {
@@ -62,18 +72,18 @@ func serializeMessage(q *message) ([]byte, error) {
 
 	length := msgBuffer.Len()
 
-	var lengthBytes []byte
-	binary.PutUvarint(lengthBytes, uint64(length))
+	var lengthBytes [8]byte
+	binary.PutUvarint(lengthBytes[:], uint64(length))
 
 	var result []byte
-	result = append(result, lengthBytes...)
+	result = append(result, lengthBytes[:]...)
 	result = append(result, msgBuffer.Bytes()...)
 
 	return result, nil
 }
 
-func deserializeMessage(conn net.Conn) (*message, error) {
-	lengthBytes := make([]byte, 4)
+func deserializeMessage(conn io.Reader) (*message, error) {
+	lengthBytes := make([]byte, 8)
 	_, err := conn.Read(lengthBytes)
 	if err != nil {
 		return nil, err

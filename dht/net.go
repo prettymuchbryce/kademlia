@@ -9,11 +9,25 @@ import (
 	"github.com/anacrolix/utp"
 )
 
+// NetworkNode is the network's representation of a node
+type NetworkNode struct {
+	// ID is a 20 byte unique identifier
+	ID []byte
+
+	// IP is the IPv4 address of the node
+	IP net.IP
+
+	// Port is the port of the node
+	Port int
+}
+
 // Network TODO
 type networking interface {
 	sendMessages([]*message) []*message
 	getMessage() *message
 	init()
+	createSocket(host string, port string) error
+	listen() error
 }
 
 type realNetworking struct {
@@ -33,9 +47,10 @@ func newNetworking() *realNetworking {
 }
 
 func (rn *realNetworking) getMessage() *message {
-	_, c := rn.broadcast.addListener("recv")
+	id, c := rn.broadcast.addListener("recv")
 	for {
 		msg := <-c
+		rn.broadcast.removeListener(id, "recv")
 		return msg.(*message)
 	}
 }
@@ -59,9 +74,10 @@ func (rn *realNetworking) sendMessages(msgs []*message) []*message {
 }
 
 func (rn *realNetworking) init() {
+	netMsgInit()
 	rn.recvChan = make(chan (*message))
 	rn.sendChan = make(chan ([]*message))
-
+	rn.broadcast = &broadcast{}
 	rn.broadcast.init()
 }
 
@@ -80,7 +96,7 @@ func (rn *realNetworking) send(msg *message) error {
 	if rn.socket == nil {
 		panic(errors.New("Not initialized."))
 	}
-	conn, err := rn.socket.Dial(msg.Node.IP.String() + ":" + strconv.Itoa(msg.Node.Port))
+	conn, err := rn.socket.Dial(msg.Receiver.IP.String() + ":" + strconv.Itoa(msg.Receiver.Port))
 	if err != nil {
 		return err
 	}
@@ -102,18 +118,21 @@ func (rn *realNetworking) listen() error {
 	if rn.socket == nil {
 		panic(errors.New("Not initialized."))
 	}
+
+	go func() {
+		for {
+			msgs := <-rn.sendChan
+			for _, msg := range msgs {
+				rn.send(msg)
+			}
+		}
+	}()
+
 	for {
 		conn, err := rn.socket.Accept()
 		if err != nil {
 			fmt.Println(err)
 		}
-
-		go func() {
-			for {
-				msg := <-rn.sendChan
-				rn.sendMessages(msg)
-			}
-		}()
 
 		go func() {
 			for {

@@ -26,7 +26,10 @@ func (b *broadcast) addListener(s string) (int, chan (interface{})) {
 	}
 	listener := make(chan (interface{}))
 	b.listeners[s].ch[b.listeners[s].co] = listener
-	b.listeners[s].co++
+
+	defer func() {
+		b.listeners[s].co++
+	}()
 
 	return b.listeners[s].co, listener
 }
@@ -55,6 +58,7 @@ func (b *broadcast) removeListener(id int, s string) {
 	}
 
 	close(b.listeners[s].ch[id])
+	delete(b.listeners[s].ch, id)
 
 	if len(b.listeners[s].ch) == 0 {
 		delete(b.listeners, s)
@@ -70,6 +74,5 @@ func (b *broadcast) dispatch(s string, value interface{}) {
 
 	for _, l := range b.listeners[s].ch {
 		l <- value
-		close(l)
 	}
 }

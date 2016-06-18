@@ -3,19 +3,19 @@ package dht
 import (
 	"bytes"
 	"math/big"
-	"net"
 )
 
 // node represents a node in the network
 type node struct {
 	// ID is a 20 byte unique identifier
-	ID []byte
-
-	// IP is the IPv4 address of the node
-	IP net.IP
-
-	// Port is the port of the node
-	Port int
+	// ID []byte
+	//
+	// // IP is the IPv4 address of the node
+	// IP net.IP
+	//
+	// // Port is the port of the node
+	// Port int
+	*NetworkNode
 
 	// LastSeen is a unix timestamp denoting the last time the node was seen
 	// k-buckets are sorted by LastSeen
@@ -26,21 +26,51 @@ type node struct {
 	RTT []int
 }
 
+func newNode(networkNode *NetworkNode) *node {
+	n := &node{}
+	n.NetworkNode = networkNode
+	return n
+}
+
 // nodeList is used in order to sort a list of arbitrary nodes against a
 // comparator. These nodes are sorted by xor distance
 type shortList struct {
 	// Nodes are a list of nodes to be compared
-	Nodes []*node
+	Nodes []*NetworkNode
 
 	// Comparator is the ID to compare to
 	Comparator []byte
 }
 
-func (n *shortList) RemoveNode(node *node) {
+func areBytesEqual(b1 []byte, b2 []byte) bool {
+	for k := range b1 {
+		if b1[k] != b2[k] {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (n *shortList) RemoveNode(node *NetworkNode) {
 	for i := 0; i < n.Len(); i++ {
-		if n.Nodes[i] == node {
+		if areBytesEqual(n.Nodes[i].ID, node.ID) {
 			n.Nodes = append(n.Nodes[:i], n.Nodes[i+1:]...)
 			return
+		}
+	}
+}
+
+func (n *shortList) AppendUniqueNetworkNodes(nodes []*NetworkNode) {
+	for _, vv := range nodes {
+		exists := false
+		for _, v := range n.Nodes {
+			if bytes.Compare(v.ID, vv.ID) == 0 {
+				exists = true
+			}
+		}
+		if !exists {
+			n.Nodes = append(n.Nodes, vv)
 		}
 	}
 }
@@ -54,7 +84,7 @@ func (n *shortList) AppendUnique(nodes []*node) {
 			}
 		}
 		if !exists {
-			n.Nodes = append(n.Nodes, vv)
+			n.Nodes = append(n.Nodes, vv.NetworkNode)
 		}
 	}
 }

@@ -6,17 +6,23 @@ import "crypto/sha256"
 
 // DHT TODO
 type DHT struct {
-	ht *hashTable
+	ht      *hashTable
+	options *Options
 }
 
 // Options TODO
 type Options struct {
-	ID []byte
+	ID             []byte
+	IP             string
+	Port           string
+	BootstrapNodes []*NetworkNode
 }
 
-// New TODO
-func (dht *DHT) New(store Store, options *Options) *DHT {
-	dht.ht = newHashTable(store, &realNetworking{})
+// NewDHT TODO
+func NewDHT(store Store, options *Options) *DHT {
+	dht := &DHT{}
+	dht.options = options
+	dht.ht = newHashTable(store, &realNetworking{}, options)
 	return dht
 }
 
@@ -28,13 +34,41 @@ func (dht *DHT) Store(data []byte) {
 }
 
 // Get TODO
-func (dht *DHT) Get(id []byte) {
+func (dht *DHT) Get(key []byte) ([]byte, bool) {
+	value, exists := dht.ht.Store.Retrieve(key)
+	if !exists {
+		value, _ = dht.ht.iterate(iterateFindValue, key, nil)
+		if value != nil {
+			exists = true
+		}
+	}
 
+	return value, exists
 }
 
 // Connect TODO
 func (dht *DHT) Connect() {
-
+	ip := dht.options.IP
+	port := dht.options.Port
+	if ip == "" {
+		ip = "127.0.0.1"
+	}
+	if port == "" {
+		port = "3000"
+	}
+	dht.ht.Networking.createSocket(ip, port)
+	go dht.ht.listen()
+	go dht.ht.Networking.listen()
+	if len(dht.options.BootstrapNodes) > 0 {
+		for _, bn := range dht.options.BootstrapNodes {
+			node := newNode(&NetworkNode{})
+			node.ID = bn.ID
+			node.IP = bn.IP
+			node.Port = bn.Port
+			dht.ht.addNode(node)
+			dht.ht.iterate(iterateFindNode, node.ID, nil)
+		}
+	}
 }
 
 // Disconnect TODO

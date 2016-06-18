@@ -2,6 +2,7 @@ package dht
 
 import (
 	"math"
+	"net"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -11,12 +12,19 @@ import (
 // single node closer to the original node. This continues until every k bucket
 // is occupied.
 func TestFindNodeAllBuckets(t *testing.T) {
-	net := newMockNetworking()
-	ht := newHashTable(&MemoryStore{}, net)
+	networking := newMockNetworking()
+	ht := newHashTable(&MemoryStore{}, networking, &Options{
+		Port: "3000",
+		IP:   "127.0.0.1",
+	})
 	id := getIDWithValues(0)
-	ht.ID = id
+	ht.Self = &NetworkNode{
+		ID:   id,
+		Port: 3000,
+		IP:   net.ParseIP("127.0.0.1"),
+	}
 
-	bootstrapNode := &node{}
+	bootstrapNode := newNode(&NetworkNode{})
 	bootstrapNode.ID = getZerodIDWithNthByte(0, byte(math.Pow(2, 7)))
 
 	ht.addNode(bootstrapNode)
@@ -26,16 +34,17 @@ func TestFindNodeAllBuckets(t *testing.T) {
 
 	go func() {
 		for {
-			queries := <-net.recv
+			queries := <-networking.recv
 			responses := []*message{}
 			for _, v := range queries {
 				r := &message{}
-				n := &node{}
-				n.ID = v.Node.ID
-				r.Node = n
+				n := newNode(&NetworkNode{})
+				n.ID = v.Sender.ID
+				r.Receiver = n.NetworkNode
+				r.Sender = &NetworkNode{ID: getIDWithValues(1), IP: net.ParseIP("127.0.0.1"), Port: 3001}
 
 				responseData := &responseDataFindNode{}
-				responseData.Closest = []*node{&node{ID: getZerodIDWithNthByte(k, byte(math.Pow(2, float64(i))))}}
+				responseData.Closest = []*NetworkNode{&NetworkNode{ID: getZerodIDWithNthByte(k, byte(math.Pow(2, float64(i))))}}
 				i--
 				if i < 0 {
 					i = 7
@@ -48,7 +57,7 @@ func TestFindNodeAllBuckets(t *testing.T) {
 				r.Data = responseData
 				responses = append(responses, r)
 			}
-			net.send <- responses
+			networking.send <- responses
 		}
 	}()
 
