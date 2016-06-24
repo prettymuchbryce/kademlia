@@ -4,6 +4,8 @@ import (
 	"net"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestAPI(t *testing.T) {
@@ -13,6 +15,7 @@ func TestAPI(t *testing.T) {
 		IP:   "127.0.0.1",
 		Port: "3000",
 	})
+
 	dht1.Connect()
 
 	dht2 := NewDHT(&MemoryStore{}, &Options{
@@ -27,7 +30,19 @@ func TestAPI(t *testing.T) {
 		Port: "3001",
 	})
 
+	assert.Equal(t, 0, getTotalNodes(dht1.ht.RoutingTable))
+
 	go dht2.Connect()
 
 	time.Sleep(time.Second * 2)
+
+	assert.Equal(t, 1, getTotalNodes(dht1.ht.RoutingTable))
+}
+
+func getTotalNodes(n [][]*node) int {
+	j := 0
+	for i := 0; i < len(n); i++ {
+		j += len(n[i])
+	}
+	return j
 }

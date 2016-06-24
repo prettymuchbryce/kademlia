@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestNetMsg(t *testing.T) {
+func TestSerializeNetMsg(t *testing.T) {
 	netMsgInit()
 	var conn bytes.Buffer
 

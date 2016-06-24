@@ -26,6 +26,7 @@ func TestFindNodeAllBuckets(t *testing.T) {
 
 	bootstrapNode := newNode(&NetworkNode{})
 	bootstrapNode.ID = getZerodIDWithNthByte(0, byte(math.Pow(2, 7)))
+	bootstrapNode.Port = 3001
 
 	ht.addNode(bootstrapNode)
 

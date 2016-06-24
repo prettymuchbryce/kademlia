@@ -61,14 +61,11 @@ func (dht *DHT) Connect() {
 	go dht.ht.Networking.listen()
 	if len(dht.options.BootstrapNodes) > 0 {
 		for _, bn := range dht.options.BootstrapNodes {
-			node := newNode(&NetworkNode{})
-			node.ID = bn.ID
-			node.IP = bn.IP
-			node.Port = bn.Port
+			node := newNode(bn)
 			dht.ht.addNode(node)
-			dht.ht.iterate(iterateFindNode, node.ID, nil)
 		}
 	}
+	dht.ht.iterate(iterateFindNode, dht.ht.Self.ID, nil)
 }
 
 // Disconnect TODO

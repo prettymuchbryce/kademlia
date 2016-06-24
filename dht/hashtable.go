@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"net"
 	"sort"
 	"strconv"
@@ -116,32 +117,36 @@ func (ht *hashTable) listen() {
 				switch msg.Type {
 				case messageTypeQueryFindNode:
 					data := msg.Data.(*queryDataFindNode)
-					_, closest := ht.iterate(iterateFindNode, data.Target, nil)
+					ht.addNode(newNode(msg.Sender))
+					closest := ht.getClosestContacts(k, data.Target, []*NetworkNode{msg.Sender})
 					response := &message{}
 					response.Sender = ht.Self
 					response.Receiver = msg.Sender
 					response.Type = messageTypeResponseFindNode
 					responseData := &responseDataFindNode{}
-					responseData.Closest = closest
+					responseData.Closest = closest.Nodes
 					response.Data = responseData
 					ht.Networking.sendMessages([]*message{response})
 				case messageTypeQueryFindValue:
 					data := msg.Data.(*queryDataFindValue)
-					value, closest := ht.iterate(iterateFindValue, data.Target, nil)
+					ht.addNode(newNode(msg.Sender))
+					value, exists := ht.Store.Retrieve(data.Target)
 					response := &message{}
 					response.Receiver = msg.Sender
 					response.Sender = ht.Self
 					response.Type = messageTypeResponseFindValue
 					responseData := &responseDataFindValue{}
-					if value != nil {
+					if exists {
 						responseData.Value = value
 					} else {
-						responseData.Closest = closest
+						closest := ht.getClosestContacts(k, data.Target, []*NetworkNode{msg.Sender})
+						responseData.Closest = closest.Nodes
 					}
 					response.Data = responseData
 					ht.Networking.sendMessages([]*message{response})
 				case messageTypeQueryStore:
 					data := msg.Data.(*queryDataStore)
+					ht.addNode(newNode(msg.Sender))
 					ht.iterate(iterateStore, data.Key, data.Data)
 				case messageTypeQueryPing:
 
@@ -151,7 +156,7 @@ func (ht *hashTable) listen() {
 	}()
 }
 
-func (ht *hashTable) getClosestContacts(num int, target []byte) *shortList {
+func (ht *hashTable) getClosestContacts(num int, target []byte, ignoredNodes []*NetworkNode) *shortList {
 	// First we need to build the list of adjacent indices to our target
 	// in order
 	index := ht.getBucketIndexFromDifferingBit(ht.Self.ID, target)
@@ -176,12 +181,26 @@ func (ht *hashTable) getClosestContacts(num int, target []byte) *shortList {
 	// Next we select alpha contacts and add them to the short list
 	for leftToAdd > 0 && len(indexList) > 0 {
 		index, indexList = indexList[0], indexList[1:]
-		len := len(ht.RoutingTable[index])
-		if len < leftToAdd {
-			sl.AppendUnique(ht.RoutingTable[index])
-		} else {
-			sl.AppendUnique(ht.RoutingTable[index][:leftToAdd])
+		bucketContacts := len(ht.RoutingTable[index])
+		for i := 0; i < bucketContacts; i++ {
+			ignored := false
+			for j := 0; j < len(ignoredNodes); j++ {
+				if bytes.Compare(ignoredNodes[j].ID, ignoredNodes[j].ID) == 0 {
+					ignored = true
+				}
+			}
+			if !ignored {
+				sl.AppendUnique([]*node{ht.RoutingTable[index][i]})
+				leftToAdd--
+				if leftToAdd == 0 {
+					break
+				}
+			}
 		}
+	}
+
+	if len(sl.Nodes) == 0 {
+		fmt.Println(ht.Self.Port, "no known nodes")
 	}
 
 	sort.Sort(sl)
@@ -198,7 +217,7 @@ func (ht *hashTable) iterate(t int, target []byte, data []byte) (value []byte, c
 	defer ht.mutex.Unlock()
 	ht.mutex.Lock()
 
-	sl := ht.getClosestContacts(alpha, target)
+	sl := ht.getClosestContacts(alpha, target, []*NetworkNode{})
 
 	// We keep track of nodes contacted so far. We don't contact the same node
 	// twice.
@@ -209,6 +228,8 @@ func (ht *hashTable) iterate(t int, target []byte, data []byte) (value []byte, c
 	if len(sl.Nodes) == 0 {
 		return nil, nil
 	}
+
+	fmt.Println(ht.Self.Port, sl.Nodes[0].Port, "start iterate")
 
 	closestNode := sl.Nodes[0]
 
@@ -266,6 +287,7 @@ func (ht *hashTable) iterate(t int, target []byte, data []byte) (value []byte, c
 			}
 			switch t {
 			case iterateFindNode:
+				fmt.Println("response iterateFindNode", ht.Self.Port, result.Sender.Port)
 				responseData := result.Data.(*responseDataFindNode)
 				for _, n := range responseData.Closest {
 					ht.addNode(newNode(n))
@@ -332,6 +354,10 @@ func (ht *hashTable) iterate(t int, target []byte, data []byte) (value []byte, c
 // we store these buckets in big-endian order so we look at the bits
 // from right to left in order to find the appropriate bucket
 func (ht *hashTable) addNode(node *node) {
+	if node.Port == 0 {
+		fmt.Println(ht.Self.Port)
+		panic(errors.New("WTF"))
+	}
 	index := ht.getBucketIndexFromDifferingBit(ht.Self.ID, node.ID)
 	bucket := ht.RoutingTable[index]
 

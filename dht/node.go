@@ -42,19 +42,9 @@ type shortList struct {
 	Comparator []byte
 }
 
-func areBytesEqual(b1 []byte, b2 []byte) bool {
-	for k := range b1 {
-		if b1[k] != b2[k] {
-			return false
-		}
-	}
-
-	return true
-}
-
 func (n *shortList) RemoveNode(node *NetworkNode) {
 	for i := 0; i < n.Len(); i++ {
-		if areBytesEqual(n.Nodes[i].ID, node.ID) {
+		if bytes.Compare(n.Nodes[i].ID, node.ID) == 0 {
 			n.Nodes = append(n.Nodes[:i], n.Nodes[i+1:]...)
 			return
 		}
