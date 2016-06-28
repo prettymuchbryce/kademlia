@@ -1,6 +1,10 @@
 package dht
 
-import "crypto/sha256"
+import (
+	"crypto/sha1"
+
+	b58 "github.com/jbenet/go-base58"
+)
 
 // Public interface
 
@@ -27,27 +31,35 @@ func NewDHT(store Store, options *Options) *DHT {
 }
 
 // Store TODO
-func (dht *DHT) Store(data []byte) {
-	key := sha256.Sum256(data)
-	dht.ht.Store.Store(key[:], data)
+func (dht *DHT) Store(data []byte) string {
+	sha := sha1.New()
+	key := sha.Sum(data)
+	dht.ht.Store.Store(key, data)
 	go dht.ht.iterate(iterateStore, key[:], data)
+	str := b58.Encode(key)
+	return str
 }
 
 // Get TODO
-func (dht *DHT) Get(key []byte) ([]byte, bool) {
-	value, exists := dht.ht.Store.Retrieve(key)
+func (dht *DHT) Get(key string) ([]byte, bool, error) {
+	keyBytes := b58.Decode(key)
+	value, exists := dht.ht.Store.Retrieve(keyBytes)
 	if !exists {
-		value, _ = dht.ht.iterate(iterateFindValue, key, nil)
+		var err error
+		value, _, err = dht.ht.iterate(iterateFindValue, keyBytes, nil)
+		if err != nil {
+			return nil, false, err
+		}
 		if value != nil {
 			exists = true
 		}
 	}
 
-	return value, exists
+	return value, exists, nil
 }
 
 // Connect TODO
-func (dht *DHT) Connect() {
+func (dht *DHT) Connect() error {
 	ip := dht.options.IP
 	port := dht.options.Port
 	if ip == "" {
@@ -56,7 +68,10 @@ func (dht *DHT) Connect() {
 	if port == "" {
 		port = "3000"
 	}
-	dht.ht.Networking.createSocket(ip, port)
+	err := dht.ht.Networking.createSocket(ip, port)
+	if err != nil {
+		return err
+	}
 	go dht.ht.listen()
 	go dht.ht.Networking.listen()
 	if len(dht.options.BootstrapNodes) > 0 {
@@ -65,10 +80,11 @@ func (dht *DHT) Connect() {
 			dht.ht.addNode(node)
 		}
 	}
-	dht.ht.iterate(iterateFindNode, dht.ht.Self.ID, nil)
+	_, _, err = dht.ht.iterate(iterateFindNode, dht.ht.Self.ID, nil)
+	return err
 }
 
 // Disconnect TODO
-func (dht *DHT) Disconnect() {
-
+func (dht *DHT) Disconnect() error {
+	return dht.ht.Networking.disconnect()
 }

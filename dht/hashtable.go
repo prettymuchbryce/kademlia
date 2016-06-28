@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/rand"
 	"errors"
-	"fmt"
 	"net"
 	"sort"
 	"strconv"
@@ -110,50 +109,54 @@ func newHashTable(s Store, n networking, options *Options) *hashTable {
 }
 
 func (ht *hashTable) listen() {
-	go func() {
-		for {
-			msg := ht.Networking.getMessage()
-			go func(msg *message) {
-				switch msg.Type {
-				case messageTypeQueryFindNode:
-					data := msg.Data.(*queryDataFindNode)
-					ht.addNode(newNode(msg.Sender))
-					closest := ht.getClosestContacts(k, data.Target, []*NetworkNode{msg.Sender})
-					response := &message{}
-					response.Sender = ht.Self
-					response.Receiver = msg.Sender
-					response.Type = messageTypeResponseFindNode
-					responseData := &responseDataFindNode{}
-					responseData.Closest = closest.Nodes
-					response.Data = responseData
-					ht.Networking.sendMessages([]*message{response})
-				case messageTypeQueryFindValue:
-					data := msg.Data.(*queryDataFindValue)
-					ht.addNode(newNode(msg.Sender))
-					value, exists := ht.Store.Retrieve(data.Target)
-					response := &message{}
-					response.Receiver = msg.Sender
-					response.Sender = ht.Self
-					response.Type = messageTypeResponseFindValue
-					responseData := &responseDataFindValue{}
-					if exists {
-						responseData.Value = value
-					} else {
-						closest := ht.getClosestContacts(k, data.Target, []*NetworkNode{msg.Sender})
-						responseData.Closest = closest.Nodes
-					}
-					response.Data = responseData
-					ht.Networking.sendMessages([]*message{response})
-				case messageTypeQueryStore:
-					data := msg.Data.(*queryDataStore)
-					ht.addNode(newNode(msg.Sender))
-					ht.iterate(iterateStore, data.Key, data.Data)
-				case messageTypeQueryPing:
-
-				}
-			}(msg)
+	for {
+		msg, err := ht.Networking.getMessage()
+		if err != nil {
+			if err == errorDisconnected {
+				return
+			}
+			panic(err)
 		}
-	}()
+		go func(msg *message) {
+			switch msg.Type {
+			case messageTypeQueryFindNode:
+				data := msg.Data.(*queryDataFindNode)
+				ht.addNode(newNode(msg.Sender))
+				closest := ht.getClosestContacts(k, data.Target, []*NetworkNode{msg.Sender})
+				response := &message{}
+				response.Sender = ht.Self
+				response.Receiver = msg.Sender
+				response.Type = messageTypeResponseFindNode
+				responseData := &responseDataFindNode{}
+				responseData.Closest = closest.Nodes
+				response.Data = responseData
+				ht.Networking.sendMessages([]*message{response}, false)
+			case messageTypeQueryFindValue:
+				data := msg.Data.(*queryDataFindValue)
+				ht.addNode(newNode(msg.Sender))
+				value, exists := ht.Store.Retrieve(data.Target)
+				response := &message{}
+				response.Receiver = msg.Sender
+				response.Sender = ht.Self
+				response.Type = messageTypeResponseFindValue
+				responseData := &responseDataFindValue{}
+				if exists {
+					responseData.Value = value
+				} else {
+					closest := ht.getClosestContacts(k, data.Target, []*NetworkNode{msg.Sender})
+					responseData.Closest = closest.Nodes
+				}
+				response.Data = responseData
+				ht.Networking.sendMessages([]*message{response}, false)
+			case messageTypeQueryStore:
+				data := msg.Data.(*queryDataStore)
+				ht.addNode(newNode(msg.Sender))
+				ht.iterate(iterateStore, data.Key, data.Data)
+			case messageTypeQueryPing:
+
+			}
+		}(msg)
+	}
 }
 
 func (ht *hashTable) getClosestContacts(num int, target []byte, ignoredNodes []*NetworkNode) *shortList {
@@ -199,10 +202,6 @@ func (ht *hashTable) getClosestContacts(num int, target []byte, ignoredNodes []*
 		}
 	}
 
-	if len(sl.Nodes) == 0 {
-		fmt.Println(ht.Self.Port, "no known nodes")
-	}
-
 	sort.Sort(sl)
 
 	return sl
@@ -211,9 +210,9 @@ func (ht *hashTable) getClosestContacts(num int, target []byte, ignoredNodes []*
 // Iterate does an iterative search through the network. This can be done
 // for multiple reasons. These reasons include:
 //     iterativeStore - Used to store new information in the network.
-//     iterativeFindNode - Used to bootstrap the network
-//     iterativeFindValue - Used to find a value among the network given a key
-func (ht *hashTable) iterate(t int, target []byte, data []byte) (value []byte, closest []*NetworkNode) {
+//     iterativeFindNode - Used to bootstrap the network.
+//     iterativeFindValue - Used to find a value among the network given a key.
+func (ht *hashTable) iterate(t int, target []byte, data []byte) (value []byte, closest []*NetworkNode, err error) {
 	defer ht.mutex.Unlock()
 	ht.mutex.Lock()
 
@@ -226,10 +225,8 @@ func (ht *hashTable) iterate(t int, target []byte, data []byte) (value []byte, c
 	// We keep a reference to the closestNode. If after performing a search
 	// we do not find a closer node, we stop searching.
 	if len(sl.Nodes) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
-
-	fmt.Println(ht.Self.Port, sl.Nodes[0].Port, "start iterate")
 
 	closestNode := sl.Nodes[0]
 
@@ -278,7 +275,13 @@ func (ht *hashTable) iterate(t int, target []byte, data []byte) (value []byte, c
 		}
 
 		// Send the async queries and wait for a response
-		results := ht.Networking.sendMessages(queries)
+		results, err := ht.Networking.sendMessages(queries, true)
+		if err != nil {
+			if err == errorDisconnected {
+				return nil, nil, err
+			}
+			panic(err)
+		}
 
 		for _, result := range results {
 			if result.Error != nil {
@@ -287,7 +290,6 @@ func (ht *hashTable) iterate(t int, target []byte, data []byte) (value []byte, c
 			}
 			switch t {
 			case iterateFindNode:
-				fmt.Println("response iterateFindNode", ht.Self.Port, result.Sender.Port)
 				responseData := result.Data.(*responseDataFindNode)
 				for _, n := range responseData.Closest {
 					ht.addNode(newNode(n))
@@ -299,7 +301,7 @@ func (ht *hashTable) iterate(t int, target []byte, data []byte) (value []byte, c
 				// store the key/value pair at the closest node seen which did
 				// not return the value.
 				if responseData.Value != nil {
-					return responseData.Value, nil
+					return responseData.Value, nil, nil
 				}
 				for _, n := range responseData.Closest {
 					ht.addNode(newNode(n))
@@ -321,14 +323,14 @@ func (ht *hashTable) iterate(t int, target []byte, data []byte) (value []byte, c
 			// We are done
 			switch t {
 			case iterateFindNode:
-				return nil, sl.Nodes
+				return nil, sl.Nodes, nil
 			case iterateFindValue:
-				return nil, sl.Nodes
+				return nil, sl.Nodes, nil
 			case iterateStore:
 				var queries []*message
 				for i, n := range sl.Nodes {
 					if i >= k {
-						return nil, nil
+						return nil, nil, nil
 					}
 
 					query := &message{}
@@ -341,8 +343,8 @@ func (ht *hashTable) iterate(t int, target []byte, data []byte) (value []byte, c
 					query.Data = queryData
 					queries = append(queries, query)
 				}
-				ht.Networking.sendMessages(queries)
-				return nil, nil
+				ht.Networking.sendMessages(queries, false)
+				return nil, nil, nil
 			}
 		} else {
 			closestNode = sl.Nodes[0]
@@ -354,10 +356,6 @@ func (ht *hashTable) iterate(t int, target []byte, data []byte) (value []byte, c
 // we store these buckets in big-endian order so we look at the bits
 // from right to left in order to find the appropriate bucket
 func (ht *hashTable) addNode(node *node) {
-	if node.Port == 0 {
-		fmt.Println(ht.Self.Port)
-		panic(errors.New("WTF"))
-	}
 	index := ht.getBucketIndexFromDifferingBit(ht.Self.ID, node.ID)
 	bucket := ht.RoutingTable[index]
 

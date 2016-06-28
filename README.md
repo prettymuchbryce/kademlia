@@ -1,4 +1,5 @@
 TODO:
+    message timeouts
     refresh
     expiration
     never send own node back

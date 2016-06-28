@@ -3,8 +3,10 @@ package dht
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"strconv"
+	"sync"
 
 	"github.com/anacrolix/utp"
 )
@@ -21,62 +23,91 @@ type NetworkNode struct {
 	Port int
 }
 
+var errorDisconnected = errors.New("disconnected")
+
 // Network TODO
 type networking interface {
-	sendMessages([]*message) []*message
-	getMessage() *message
+	sendMessages([]*message, bool) ([]*message, error)
+	getMessage() (*message, error)
 	init()
 	createSocket(host string, port string) error
 	listen() error
+	disconnect() error
 }
 
 type realNetworking struct {
 	socket     *utp.Socket
-	recvChan   chan (*message)
 	sendChan   chan ([]*message)
+	dcChan     chan (int)
 	address    *net.UDPAddr
 	broadcast  *broadcast
 	connection *net.UDPConn
+	waitgroup  *sync.WaitGroup
+	mutex      *sync.Mutex
 }
 
-func newNetworking() *realNetworking {
-	net := &realNetworking{}
-	net.recvChan = make(chan (*message))
-	net.sendChan = make(chan ([]*message))
-	return net
-}
-
-func (rn *realNetworking) getMessage() *message {
+func (rn *realNetworking) getMessage() (*message, error) {
+	rn.waitgroup.Add(1)
+	defer rn.waitgroup.Done()
 	id, c := rn.broadcast.addListener("recv")
 	for {
 		msg := <-c
+		if msg == nil {
+			// If message is nil channel has been closed and we have been
+			// disconnected.
+			rn.broadcast.removeListener(id, "recv")
+			return nil, errorDisconnected
+		}
 		rn.broadcast.removeListener(id, "recv")
-		return msg.(*message)
+		return msg.(*message), nil
 	}
 }
 
-func (rn *realNetworking) sendMessages(msgs []*message) []*message {
-	id, c := rn.broadcast.addListener("recv")
+func (rn *realNetworking) sendMessages(msgs []*message, expectResponse bool) ([]*message, error) {
+	rn.waitgroup.Add(1)
+	defer rn.waitgroup.Done()
+	var id int
+	var c chan (interface{})
+
+	if expectResponse {
+		id, c = rn.broadcast.addListener("recv")
+	}
 	rn.sendChan <- msgs
-	var result []*message
-	for {
-		msg := <-c
-		for _, m := range msgs {
-			if m.ID == msg.(*message).ID {
-				result = append(result, msg.(*message))
-				if len(result) == len(msgs) {
-					rn.broadcast.removeListener(id, "recv")
-					return result
+	if expectResponse {
+		var result []*message
+		for {
+			msg := <-c
+			if msg == nil {
+				// If message is nil channel has been closed and we have been
+				// disconnected.
+				rn.broadcast.removeListener(id, "recv")
+				return nil, errorDisconnected
+			}
+			for _, m := range msgs {
+				if m.ID == msg.(*message).ID {
+					result = append(result, msg.(*message))
+					if len(result) == len(msgs) {
+						rn.broadcast.removeListener(id, "recv")
+						return result, nil
+					}
 				}
 			}
 		}
+	} else {
+		return nil, nil
 	}
 }
 
 func (rn *realNetworking) init() {
+	if rn.mutex == nil {
+		rn.mutex = &sync.Mutex{}
+	}
+	rn.mutex.Lock()
+	defer rn.mutex.Unlock()
+	rn.waitgroup = &sync.WaitGroup{}
 	netMsgInit()
-	rn.recvChan = make(chan (*message))
 	rn.sendChan = make(chan ([]*message))
+	rn.dcChan = make(chan (int))
 	rn.broadcast = &broadcast{}
 	rn.broadcast.init()
 }
@@ -93,13 +124,17 @@ func (rn *realNetworking) createSocket(host string, port string) error {
 }
 
 func (rn *realNetworking) send(msg *message) error {
+	rn.mutex.Lock()
+	defer rn.mutex.Unlock()
 	if rn.socket == nil {
-		panic(errors.New("Not initialized."))
+		panic(errors.New("Can't send. Not initialized."))
 	}
 	conn, err := rn.socket.Dial(msg.Receiver.IP.String() + ":" + strconv.Itoa(msg.Receiver.Port))
 	if err != nil {
 		return err
 	}
+
+	rn.waitgroup.Add(1)
 
 	data, err := serializeMessage(msg)
 	if err != nil {
@@ -111,17 +146,46 @@ func (rn *realNetworking) send(msg *message) error {
 		return err
 	}
 
+	defer rn.waitgroup.Done()
+	conn.Close()
+	conn = nil
+
 	return nil
 }
 
+func (rn *realNetworking) disconnect() error {
+	rn.mutex.Lock()
+	defer rn.mutex.Unlock()
+	close(rn.dcChan)
+	close(rn.sendChan)
+	err := rn.socket.Close()
+	rn.socket = nil
+	rn.broadcast.removeAll()
+	rn.waitgroup.Wait()
+	rn.sendChan = make(chan ([]*message))
+	rn.dcChan = make(chan (int))
+	return err
+}
+
 func (rn *realNetworking) listen() error {
+	rn.waitgroup.Add(1)
+	defer rn.waitgroup.Done()
+
 	if rn.socket == nil {
-		panic(errors.New("Not initialized."))
+		// Possible that we were disconnected before we could start listening
+		panic(errors.New("No socket"))
+		return nil
 	}
 
 	go func() {
 		for {
+			rn.waitgroup.Add(1)
+			defer rn.waitgroup.Done()
 			msgs := <-rn.sendChan
+			if msgs == nil {
+				// Channel closed, disconnected
+				return
+			}
 			for _, msg := range msgs {
 				rn.send(msg)
 			}
@@ -130,22 +194,48 @@ func (rn *realNetworking) listen() error {
 
 	for {
 		conn, err := rn.socket.Accept()
-		if err != nil {
-			fmt.Println(err)
+		if err == nil {
+			rn.waitgroup.Add(1)
 		}
 
-		go func() {
+		if err != nil {
+			if err.Error() == "closed" {
+				conn = nil
+				return nil
+			} else {
+				return err
+			}
+		}
+
+		go func(conn net.Conn) {
 			for {
 				// Wait for messages
 				msg, err := deserializeMessage(conn)
 				if err != nil {
-					fmt.Println(err)
-					continue
+					if err == io.EOF {
+						defer rn.waitgroup.Done()
+						conn.Close()
+						conn = nil
+						return
+					} else {
+						fmt.Println(err)
+						continue
+					}
 				}
 				rn.broadcast.dispatch("recv", msg)
 			}
-		}()
-	}
+		}(conn)
 
+		go func(conn net.Conn) {
+			rn.waitgroup.Add(1)
+			defer rn.waitgroup.Done()
+			_ = <-rn.dcChan
+			conn.Close()
+			conn = nil
+		}(conn)
+
+		conn = nil
+
+	}
 	return nil
 }
