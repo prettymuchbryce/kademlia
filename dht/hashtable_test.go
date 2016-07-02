@@ -13,7 +13,7 @@ import (
 // is occupied.
 func TestFindNodeAllBuckets(t *testing.T) {
 	networking := newMockNetworking()
-	ht := newHashTable(&MemoryStore{}, networking, &Options{
+	ht, _ := newHashTable(&MemoryStore{}, networking, &Options{
 		Port: "3000",
 		IP:   "127.0.0.1",
 	})

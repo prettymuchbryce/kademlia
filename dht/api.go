@@ -23,11 +23,15 @@ type Options struct {
 }
 
 // NewDHT TODO
-func NewDHT(store Store, options *Options) *DHT {
+func NewDHT(store Store, options *Options) (*DHT, error) {
 	dht := &DHT{}
 	dht.options = options
-	dht.ht = newHashTable(store, &realNetworking{}, options)
-	return dht
+	ht, err := newHashTable(store, &realNetworking{}, options)
+	if err != nil {
+		return nil, err
+	}
+	dht.ht = ht
+	return dht, nil
 }
 
 // Store TODO

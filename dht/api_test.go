@@ -9,7 +9,7 @@ import (
 
 func TestBootstrapAPITwoNodes(t *testing.T) {
 	id1, _ := newID()
-	dht1 := NewDHT(getInMemoryStore(), &Options{
+	dht1, _ := NewDHT(getInMemoryStore(), &Options{
 		ID:   id1,
 		IP:   "127.0.0.1",
 		Port: "3000",
@@ -18,7 +18,7 @@ func TestBootstrapAPITwoNodes(t *testing.T) {
 	err := dht1.Connect()
 	assert.NoError(t, err)
 
-	dht2 := NewDHT(getInMemoryStore(), &Options{
+	dht2, _ := NewDHT(getInMemoryStore(), &Options{
 		BootstrapNodes: []*NetworkNode{
 			&NetworkNode{
 				ID:   id1,
@@ -45,7 +45,7 @@ func TestBootstrapAPITwoNodes(t *testing.T) {
 
 func TestDisconnect(t *testing.T) {
 	id1, _ := newID()
-	dht1 := NewDHT(getInMemoryStore(), &Options{
+	dht1, _ := NewDHT(getInMemoryStore(), &Options{
 		ID:   id1,
 		IP:   "127.0.0.1",
 		Port: "3004",
@@ -80,7 +80,7 @@ func TestDisconnect(t *testing.T) {
 
 func TestStoreAndFindValue(t *testing.T) {
 	id1, _ := newID()
-	dht1 := NewDHT(getInMemoryStore(), &Options{
+	dht1, _ := NewDHT(getInMemoryStore(), &Options{
 		ID:   id1,
 		IP:   "127.0.0.1",
 		Port: "3002",
@@ -91,7 +91,7 @@ func TestStoreAndFindValue(t *testing.T) {
 
 	key := dht1.Store([]byte("Foo"))
 
-	dht2 := NewDHT(getInMemoryStore(), &Options{
+	dht2, _ := NewDHT(getInMemoryStore(), &Options{
 		BootstrapNodes: []*NetworkNode{
 			&NetworkNode{
 				ID:   id1,

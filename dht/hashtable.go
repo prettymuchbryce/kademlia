@@ -67,7 +67,7 @@ type hashTable struct {
 	mutex *sync.Mutex
 }
 
-func newHashTable(s Store, n networking, options *Options) *hashTable {
+func newHashTable(s Store, n networking, options *Options) (*hashTable, error) {
 	ht := &hashTable{}
 
 	ht.mutex = &sync.Mutex{}
@@ -86,14 +86,13 @@ func newHashTable(s Store, n networking, options *Options) *hashTable {
 
 	if options.IP == "" || options.Port == "" {
 		// TODO don't panic, bubble up.
-		panic(errors.New("Port and IP required"))
+		return nil, errors.New("Port and IP required")
 	}
 
 	ht.Self.IP = net.ParseIP(options.IP)
 	port, err := strconv.Atoi(options.Port)
 	if err != nil {
-		// TODO don't panic, bubble up.
-		panic(err)
+		return nil, err
 	}
 	ht.Self.Port = port
 
@@ -105,7 +104,7 @@ func newHashTable(s Store, n networking, options *Options) *hashTable {
 		ht.RoutingTable = append(ht.RoutingTable, []*node{})
 	}
 
-	return ht
+	return ht, nil
 }
 
 func (ht *hashTable) listen() {

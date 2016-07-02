@@ -176,7 +176,6 @@ func (rn *realNetworking) listen() error {
 		panic(errors.New("No socket"))
 		return nil
 	}
-
 	go func() {
 		for {
 			rn.waitgroup.Add(1)
