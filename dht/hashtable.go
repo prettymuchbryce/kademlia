@@ -159,6 +159,8 @@ func (ht *hashTable) listen() {
 }
 
 func (ht *hashTable) getClosestContacts(num int, target []byte, ignoredNodes []*NetworkNode) *shortList {
+	ht.mutex.Lock()
+	defer ht.mutex.Unlock()
 	// First we need to build the list of adjacent indices to our target
 	// in order
 	index := ht.getBucketIndexFromDifferingBit(ht.Self.ID, target)
@@ -212,9 +214,6 @@ func (ht *hashTable) getClosestContacts(num int, target []byte, ignoredNodes []*
 //     iterativeFindNode - Used to bootstrap the network.
 //     iterativeFindValue - Used to find a value among the network given a key.
 func (ht *hashTable) iterate(t int, target []byte, data []byte) (value []byte, closest []*NetworkNode, err error) {
-	defer ht.mutex.Unlock()
-	ht.mutex.Lock()
-
 	sl := ht.getClosestContacts(alpha, target, []*NetworkNode{})
 
 	// We keep track of nodes contacted so far. We don't contact the same node
@@ -355,6 +354,8 @@ func (ht *hashTable) iterate(t int, target []byte, data []byte) (value []byte, c
 // we store these buckets in big-endian order so we look at the bits
 // from right to left in order to find the appropriate bucket
 func (ht *hashTable) addNode(node *node) {
+	ht.mutex.Lock()
+	defer ht.mutex.Unlock()
 	index := ht.getBucketIndexFromDifferingBit(ht.Self.ID, node.ID)
 	bucket := ht.RoutingTable[index]
 

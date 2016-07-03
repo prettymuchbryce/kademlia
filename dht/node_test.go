@@ -19,12 +19,12 @@ func TestDistanceMetric(t *testing.T) {
 	v := getIDWithValues(0)
 	v[19] = byte(1)
 	value = getDistance(n.ID, v)
-	assert.Equal(t, 1, value)
+	assert.Equal(t, big.NewInt(1), value)
 
 	v = getIDWithValues(0)
 	v[18] = byte(1)
 	value = getDistance(n.ID, v)
-	assert.Equal(t, 256, value)
+	assert.Equal(t, big.NewInt(256), value)
 
 	v = getIDWithValues(255)
 	value = getDistance(n.ID, v)

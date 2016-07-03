@@ -74,8 +74,8 @@ func TestDisconnect(t *testing.T) {
 	err = dht1.Disconnect()
 	assert.NoError(t, err)
 
-	// err = dht1.Connect()
-	// assert.NoError(t, err)
+	err = dht1.Connect()
+	assert.NoError(t, err)
 }
 
 func TestStoreAndFindValue(t *testing.T) {
