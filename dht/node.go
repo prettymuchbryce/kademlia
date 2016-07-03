@@ -3,18 +3,23 @@ package dht
 import (
 	"bytes"
 	"math/big"
+	"net"
 )
 
-// node represents a node in the network
-type node struct {
+// NetworkNode is the over-the-wire representation of a node
+type NetworkNode struct {
 	// ID is a 20 byte unique identifier
-	// ID []byte
-	//
-	// // IP is the IPv4 address of the node
-	// IP net.IP
-	//
-	// // Port is the port of the node
-	// Port int
+	ID []byte
+
+	// IP is the IPv4 address of the node
+	IP net.IP
+
+	// Port is the port of the node
+	Port int
+}
+
+// node represents a node in the network locally
+type node struct {
 	*NetworkNode
 
 	// LastSeen is a unix timestamp denoting the last time the node was seen

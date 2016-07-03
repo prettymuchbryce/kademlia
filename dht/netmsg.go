@@ -19,12 +19,13 @@ const (
 )
 
 type message struct {
-	Sender   *NetworkNode
-	Receiver *NetworkNode
-	ID       [b]byte
-	Error    error
-	Type     string
-	Data     interface{}
+	Sender     *NetworkNode
+	Receiver   *NetworkNode
+	ID         int64
+	Error      error
+	Type       string
+	IsResponse bool
+	Data       interface{}
 }
 
 type queryDataFindNode struct {
