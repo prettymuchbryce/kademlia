@@ -17,7 +17,7 @@ var (
 
 // Network TODO
 type networking interface {
-	sendMessage(*message, bool) (chan (*message), error)
+	sendMessage(*message, int64, bool) (chan (*message), error)
 	getMessage() *message
 	getMessageFin()
 	init()
@@ -34,8 +34,9 @@ type realNetworking struct {
 	address     *net.UDPAddr
 	connection  *net.UDPConn
 	mutex       *sync.Mutex
-	msgCounter  int64
+	connected   bool
 	responseMap map[int64]chan (*message)
+	connections []net.Conn
 }
 
 func (rn *realNetworking) init() {
@@ -55,26 +56,31 @@ func (rn *realNetworking) getMessageFin() {
 }
 
 func (rn *realNetworking) createSocket(host string, port string) error {
+	rn.mutex.Lock()
+	defer rn.mutex.Unlock()
 	socket, err := utp.NewSocket("udp", host+":"+port)
 	if err != nil {
 		return err
 	}
+
+	rn.connected = true
 
 	rn.socket = socket
 
 	return nil
 }
 
-func (rn *realNetworking) sendMessage(msg *message, expectResponse bool) (chan (*message), error) {
+func (rn *realNetworking) sendMessage(msg *message, id int64, expectResponse bool) (chan (*message), error) {
 	rn.mutex.Lock()
 	defer rn.mutex.Unlock()
-	id := rn.msgCounter
-	rn.msgCounter++
+	msg.ID = id
 
 	conn, err := rn.socket.Dial(msg.Receiver.IP.String() + ":" + strconv.Itoa(msg.Receiver.Port))
 	if err != nil {
 		return nil, err
 	}
+
+	defer conn.Close()
 
 	data, err := serializeMessage(msg)
 	if err != nil {
@@ -92,7 +98,6 @@ func (rn *realNetworking) sendMessage(msg *message, expectResponse bool) (chan (
 		return responseChan, nil
 	}
 
-	conn.Close()
 	return nil, nil
 }
 
@@ -100,8 +105,14 @@ func (rn *realNetworking) disconnect() error {
 	close(rn.sendChan)
 	close(rn.recvChan)
 	<-rn.dcChan
-	err := rn.socket.Close()
-	return err
+	rn.mutex.Lock()
+	for _, v := range rn.connections {
+		v.Close()
+	}
+	rn.connections = []net.Conn{}
+	rn.connected = false
+	rn.mutex.Unlock()
+	return rn.socket.Close()
 }
 
 func (rn *realNetworking) listen() error {
@@ -111,6 +122,10 @@ func (rn *realNetworking) listen() error {
 			return err
 		}
 
+		rn.mutex.Lock()
+		rn.connections = append(rn.connections, conn)
+		rn.mutex.Unlock()
+
 		go func(conn net.Conn) {
 			for {
 				// Wait for messages
@@ -118,7 +133,14 @@ func (rn *realNetworking) listen() error {
 				if err != nil {
 					if err == io.EOF {
 						conn.Close()
-						conn = nil
+						rn.mutex.Lock()
+						for k, v := range rn.connections {
+							if v == conn {
+								rn.connections = append(rn.connections[:k], rn.connections[k+1:]...)
+								break
+							}
+						}
+						rn.mutex.Unlock()
 						return
 					} else {
 						fmt.Println(err)
@@ -127,12 +149,14 @@ func (rn *realNetworking) listen() error {
 				}
 
 				rn.mutex.Lock()
-				if msg.IsResponse && rn.responseMap[msg.ID] != nil {
-					rn.responseMap[msg.ID] <- msg
-					close(rn.responseMap[msg.ID])
-					delete(rn.responseMap, msg.ID)
-				} else {
-					rn.recvChan <- msg
+				if rn.connected {
+					if msg.IsResponse && rn.responseMap[msg.ID] != nil {
+						rn.responseMap[msg.ID] <- msg
+						close(rn.responseMap[msg.ID])
+						delete(rn.responseMap, msg.ID)
+					} else {
+						rn.recvChan <- msg
+					}
 				}
 				rn.mutex.Unlock()
 			}
