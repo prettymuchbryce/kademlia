@@ -10,24 +10,6 @@ import (
 	"sync"
 )
 
-// In seconds
-const (
-	// the time after which a key/value pair expires;
-	// this is a time-to-live (TTL) from the original publication date
-	tExpire = 86410
-
-	// seconds after which an otherwise unaccessed bucket must be refreshed
-	tRefresh = 3600
-
-	// the interval between Kademlia replication events, when a node is
-	// required to publish its entire database
-	tReplicated = 3600
-
-	// the time after which the original publisher must
-	// republish a key/value pair
-	tRepublish = 86400
-)
-
 const (
 	iterateStore = iota
 	iterateFindNode
@@ -140,37 +122,6 @@ func (ht *hashTable) getClosestContacts(num int, target []byte, ignoredNodes []*
 	sort.Sort(sl)
 
 	return sl
-}
-
-// addNode adds a node into the appropriate k bucket
-// we store these buckets in big-endian order so we look at the bits
-// from right to left in order to find the appropriate bucket
-func (ht *hashTable) addNode(node *node) {
-	ht.mutex.Lock()
-	defer ht.mutex.Unlock()
-	index := ht.getBucketIndexFromDifferingBit(ht.Self.ID, node.ID)
-	bucket := ht.RoutingTable[index]
-
-	// Make sure node doesn't already exist
-	for _, v := range bucket {
-		if bytes.Compare(v.ID, node.ID) == 0 {
-			return
-		}
-	}
-
-	bucket = append(bucket, node)
-
-	// TODO sort by recently seen
-
-	// If there are more than k items in the bucket, remove
-	// the last one
-	// TODO The Kademlia paper suggests pinging the last node first, and
-	// leaving it if it responds. That is - we have a preference for old contacts
-	if len(bucket) > k {
-		bucket = bucket[:len(bucket)-1]
-	}
-
-	ht.RoutingTable[index] = bucket
 }
 
 func (ht *hashTable) getBucketIndexFromDifferingBit(id1 []byte, id2 []byte) int {

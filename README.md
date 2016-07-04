@@ -2,9 +2,7 @@ TODO:
     message timeouts
     refresh
     expiration
-    never send own node back
     ping
-    store
     sorting by recently seen
     replication
 

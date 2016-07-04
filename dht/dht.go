@@ -5,11 +5,32 @@ import (
 	"crypto/sha1"
 	"fmt"
 	"sort"
+	"time"
 
 	b58 "github.com/jbenet/go-base58"
 )
 
-// Public interface
+// In seconds
+const (
+	// the time after which a key/value pair expires;
+	// this is a time-to-live (TTL) from the original publication date
+	tExpire = 86410
+
+	// seconds after which an otherwise unaccessed bucket must be refreshed
+	tRefresh = 3600
+
+	// the interval between Kademlia replication events, when a node is
+	// required to publish its entire database
+	tReplicated = 3600
+
+	// the time after which the original publisher must
+	// republish a key/value pair
+	tRepublish = 86400
+
+	// the maximum time to wait for a response from a node before discarding
+	// it from the bucket
+	tPingMax = 1
+)
 
 // DHT TODO
 type DHT struct {
@@ -26,6 +47,7 @@ type Options struct {
 	IP             string
 	Port           string
 	BootstrapNodes []*NetworkNode
+	ContactTimeout *time.Time
 }
 
 // NewDHT TODO
@@ -99,7 +121,7 @@ func (dht *DHT) Bootstrap() error {
 	if len(dht.options.BootstrapNodes) > 0 {
 		for _, bn := range dht.options.BootstrapNodes {
 			node := newNode(bn)
-			dht.ht.addNode(node)
+			dht.addNode(node)
 		}
 	}
 	_, _, err := dht.iterate(iterateFindNode, dht.ht.Self.ID, nil)
@@ -205,7 +227,7 @@ func (dht *DHT) iterate(t int, target []byte, data []byte) (value []byte, closes
 			case iterateFindNode:
 				responseData := result.Data.(*responseDataFindNode)
 				for _, n := range responseData.Closest {
-					dht.ht.addNode(newNode(n))
+					dht.addNode(newNode(n))
 				}
 				sl.AppendUniqueNetworkNodes(responseData.Closest)
 			case iterateFindValue:
@@ -217,13 +239,13 @@ func (dht *DHT) iterate(t int, target []byte, data []byte) (value []byte, closes
 					return responseData.Value, nil, nil
 				}
 				for _, n := range responseData.Closest {
-					dht.ht.addNode(newNode(n))
+					dht.addNode(newNode(n))
 				}
 				sl.AppendUniqueNetworkNodes(responseData.Closest)
 			case iterateStore:
 				responseData := result.Data.(*responseDataFindNode)
 				for _, n := range responseData.Closest {
-					dht.ht.addNode(newNode(n))
+					dht.addNode(newNode(n))
 				}
 				sl.AppendUniqueNetworkNodes(responseData.Closest)
 			}
@@ -264,6 +286,53 @@ func (dht *DHT) iterate(t int, target []byte, data []byte) (value []byte, closes
 	}
 }
 
+// addNode adds a node into the appropriate k bucket
+// we store these buckets in big-endian order so we look at the bits
+// from right to left in order to find the appropriate bucket
+func (dht *DHT) addNode(node *node) {
+	dht.ht.mutex.Lock()
+	defer dht.ht.mutex.Unlock()
+
+	index := dht.ht.getBucketIndexFromDifferingBit(dht.ht.Self.ID, node.ID)
+	bucket := dht.ht.RoutingTable[index]
+
+	// Make sure node doesn't already exist
+	for _, v := range bucket {
+		if bytes.Compare(v.ID, node.ID) == 0 {
+			return
+		}
+	}
+
+	if len(bucket) == k {
+		// If the bucket is full we need to ping the first node to find out
+		// if it responds back in a reasonable amount of time. If not -
+		// we may remove it
+		n := bucket[0].NetworkNode
+		query := &message{}
+		query.Receiver = n
+		query.Sender = dht.ht.Self
+		query.Type = messageTypeQueryPing
+		ch, err := dht.networking.sendMessage(query, dht.msgCounter, true)
+		dht.msgCounter++
+		if err != nil {
+			bucket = append(bucket, node)
+			bucket = bucket[1:]
+		} else {
+			select {
+			case <-ch:
+				return
+			case <-time.After(time.Second * tPingMax):
+				bucket = append(bucket, node)
+				bucket = bucket[1:]
+			}
+		}
+	} else {
+		bucket = append(bucket, node)
+	}
+
+	dht.ht.RoutingTable[index] = bucket
+}
+
 func (dht *DHT) listen() {
 	for {
 		msg := dht.networking.getMessage()
@@ -275,7 +344,7 @@ func (dht *DHT) listen() {
 		switch msg.Type {
 		case messageTypeQueryFindNode:
 			data := msg.Data.(*queryDataFindNode)
-			dht.ht.addNode(newNode(msg.Sender))
+			dht.addNode(newNode(msg.Sender))
 			closest := dht.ht.getClosestContacts(k, data.Target, []*NetworkNode{msg.Sender})
 			response := &message{IsResponse: true}
 			response.Sender = dht.ht.Self
@@ -287,7 +356,7 @@ func (dht *DHT) listen() {
 			dht.networking.sendMessage(response, msg.ID, false)
 		case messageTypeQueryFindValue:
 			data := msg.Data.(*queryDataFindValue)
-			dht.ht.addNode(newNode(msg.Sender))
+			dht.addNode(newNode(msg.Sender))
 			value, exists := dht.store.Retrieve(data.Target)
 			response := &message{IsResponse: true}
 			response.ID = msg.ID
@@ -305,10 +374,14 @@ func (dht *DHT) listen() {
 			dht.networking.sendMessage(response, msg.ID, false)
 		case messageTypeQueryStore:
 			data := msg.Data.(*queryDataStore)
-			dht.ht.addNode(newNode(msg.Sender))
+			dht.addNode(newNode(msg.Sender))
 			dht.store.Store(data.Key, data.Data)
 		case messageTypeQueryPing:
-			// response := &message{IsResponse: true}
+			response := &message{IsResponse: true}
+			response.Sender = dht.ht.Self
+			response.Receiver = msg.Sender
+			response.Type = messageTypeResponsePing
+			dht.networking.sendMessage(response, msg.ID, false)
 		}
 	}
 }
