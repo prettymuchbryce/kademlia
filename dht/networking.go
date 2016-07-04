@@ -101,6 +101,11 @@ func (rn *realNetworking) sendMessage(msg *message, id int64, expectResponse boo
 	return nil, nil
 }
 
+func (rn *realNetworking) cancelResponse(id int64) {
+	close(rn.responseMap[id])
+	delete(rn.responseMap, id)
+}
+
 func (rn *realNetworking) disconnect() error {
 	close(rn.sendChan)
 	close(rn.recvChan)

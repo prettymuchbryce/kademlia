@@ -63,3 +63,55 @@ func TestFindNodeAllBuckets(t *testing.T) {
 		assert.Equal(t, 1, len(v))
 	}
 }
+
+func TestNodeTimeout(t *testing.T) {
+	networking := newMockNetworking()
+	id := getIDWithValues(0)
+
+	dht, _ := NewDHT(getInMemoryStore(), &Options{
+		ID:   id,
+		Port: "3000",
+		IP:   "127.0.0.1",
+		BootstrapNodes: []*NetworkNode{&NetworkNode{
+			ID:   getZerodIDWithNthByte(9, byte(255)),
+			Port: 3001,
+		},
+		},
+	})
+
+	dht.networking = networking
+	dht.CreateSocket()
+
+	var i = 254
+
+	go func() {
+		for {
+			v := <-networking.recv
+			r := &message{}
+			switch v.Type {
+			case messageTypeQueryFindNode:
+				n := newNode(&NetworkNode{})
+				n.ID = v.Sender.ID
+				r.Receiver = n.NetworkNode
+				r.Sender = &NetworkNode{ID: getIDWithValues(1), IP: net.ParseIP("127.0.0.1"), Port: 3001}
+
+				id := getZerodIDWithNthByte(9, byte(math.Pow(2, 7)))
+				if i < 255-k {
+					i = 255
+				}
+				id[9] = byte(i)
+				i--
+
+				responseData := &responseDataFindNode{}
+				responseData.Closest = []*NetworkNode{&NetworkNode{ID: id}}
+
+				r.Data = responseData
+				networking.send <- r
+			case messageTypeQueryPing:
+				assert.Equal(t, messageTypeQueryPing, v.Type)
+			}
+		}
+	}()
+
+	dht.Bootstrap()
+}

@@ -3,7 +3,6 @@ package dht
 import (
 	"bytes"
 	"crypto/sha1"
-	"fmt"
 	"sort"
 	"time"
 
@@ -30,6 +29,9 @@ const (
 	// the maximum time to wait for a response from a node before discarding
 	// it from the bucket
 	tPingMax = 1
+
+	// the maximum time to wait for a response to any message
+	tMsgTimeout = 2
 )
 
 // DHT TODO
@@ -203,8 +205,12 @@ func (dht *DHT) iterate(t int, target []byte, data []byte) (value []byte, closes
 			ch, err := dht.networking.sendMessage(q, dht.msgCounter, true)
 			dht.msgCounter++
 			if err != nil {
-				// TODO handle this somehow ?
-				fmt.Println(err)
+				// Node was unreachable for some reason. We should remove it.
+				// TODO Does it make more sense to deprioritize the node to
+				// the end of the bucket in hopes that it could come back online?
+				if err.Error() == "timed out waiting for ack" {
+					dht.ht.removeNode(q.Receiver.ID)
+				}
 				continue
 
 			}

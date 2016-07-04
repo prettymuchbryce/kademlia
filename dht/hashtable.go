@@ -124,6 +124,22 @@ func (ht *hashTable) getClosestContacts(num int, target []byte, ignoredNodes []*
 	return sl
 }
 
+func (ht *hashTable) removeNode(ID []byte) {
+	ht.mutex.Lock()
+	defer ht.mutex.Unlock()
+
+	index := ht.getBucketIndexFromDifferingBit(ht.Self.ID, ID)
+	bucket := ht.RoutingTable[index]
+
+	for i, v := range bucket {
+		if bytes.Compare(v.ID, ID) == 0 {
+			bucket = append(bucket[:i], bucket[i+1:]...)
+		}
+	}
+
+	ht.RoutingTable[index] = bucket
+}
+
 func (ht *hashTable) getBucketIndexFromDifferingBit(id1 []byte, id2 []byte) int {
 	// Look at each byte from right to left
 	for j := 0; j < len(id1); j++ {

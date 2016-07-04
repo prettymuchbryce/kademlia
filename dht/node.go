@@ -19,16 +19,10 @@ type NetworkNode struct {
 }
 
 // node represents a node in the network locally
+// a separate struct due to the fact that we may want to add some metadata
+// here later such as RTT, or LastSeen time
 type node struct {
 	*NetworkNode
-
-	// LastSeen is a unix timestamp denoting the last time the node was seen
-	// k-buckets are sorted by LastSeen
-	LastSeen int64
-
-	// RTT is a list of times in milliseconds that the node took to respond
-	// to requests. This is used to determine how latent the node is
-	RTT []int
 }
 
 func newNode(networkNode *NetworkNode) *node {
