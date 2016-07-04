@@ -52,6 +52,11 @@ type Options struct {
 	ContactTimeout *time.Time
 }
 
+type chanQuery struct {
+	query *message
+	ch    chan (*message)
+}
+
 // NewDHT TODO
 func NewDHT(store Store, options *Options) (*DHT, error) {
 	dht := &DHT{}
@@ -156,7 +161,8 @@ func (dht *DHT) iterate(t int, target []byte, data []byte) (value []byte, closes
 	closestNode := sl.Nodes[0]
 
 	for {
-		queries := []*message{}
+		// queries := []*message{}
+		queries := []*chanQuery{}
 		// Next we send messages to the first (closest) alpha nodes in the
 		// shortlist and wait for a response
 
@@ -196,32 +202,50 @@ func (dht *DHT) iterate(t int, target []byte, data []byte) (value []byte, closes
 				panic("Unknown iterate type")
 			}
 
-			queries = append(queries, query)
-		}
-
-		// Send the async queries and wait for a response
-		var chans []chan (*message)
-		for _, q := range queries {
-			ch, err := dht.networking.sendMessage(q, dht.msgCounter, true)
+			// Send the async queries and wait for a response
+			ch, err := dht.networking.sendMessage(query, dht.msgCounter, true)
 			dht.msgCounter++
 			if err != nil {
 				// Node was unreachable for some reason. We should remove it.
 				// TODO Does it make more sense to deprioritize the node to
 				// the end of the bucket in hopes that it could come back online?
 				if err.Error() == "timed out waiting for ack" {
-					dht.ht.removeNode(q.Receiver.ID)
+					dht.ht.removeNode(query.Receiver.ID)
 				}
+				sl.RemoveNode(query.Receiver)
 				continue
-
 			}
-			chans = append(chans, ch)
+			queries = append(queries, &chanQuery{query: query, ch: ch})
+		}
+
+		resultChan := make(chan (*message))
+		for _, q := range queries {
+			go func() {
+				select {
+				case result := <-q.ch:
+					if result == nil {
+						dht.networking.cancelResponse(q.query.ID)
+					} else {
+						resultChan <- result
+					}
+				}
+			}()
 		}
 
 		var results []*message
-		for _, c := range chans {
-			result := <-c
-			// TODO handle errors/timeouts
-			results = append(results, result)
+	Loop:
+		for {
+			select {
+			case result := <-resultChan:
+				results = append(results, result)
+				if len(results) == len(queries) {
+					close(resultChan)
+					break Loop
+				}
+			case <-time.After(time.Second * tMsgTimeout):
+				close(resultChan)
+				break Loop
+			}
 		}
 
 		for _, result := range results {

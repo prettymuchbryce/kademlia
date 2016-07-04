@@ -22,6 +22,9 @@ func (net *mockNetworking) createSocket(host string, port string) error {
 	return nil
 }
 
+func (net *mockNetworking) cancelResponse(id int64) {
+}
+
 func (net *mockNetworking) init() {
 	net.recv = make(chan (*message))
 	net.send = make(chan (*message))

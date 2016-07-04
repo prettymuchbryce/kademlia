@@ -1,9 +1,11 @@
 TODO:
-    message timeouts
+    test message timeouts
     refresh
     expiration
     replication
 
+Nice to have:
+    loose parallelism for iterative lookups
 
 http://xlattice.sourceforge.net/components/protocol/kademlia/specs.html#FIND_VALUE
 

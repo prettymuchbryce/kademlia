@@ -24,6 +24,7 @@ type networking interface {
 	createSocket(host string, port string) error
 	listen() error
 	disconnect() error
+	cancelResponse(id int64)
 }
 
 type realNetworking struct {
