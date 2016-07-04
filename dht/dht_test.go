@@ -79,6 +79,7 @@ func TestReconnect(t *testing.T) {
 
 	go func() {
 		dht1.Disconnect()
+		done <- true
 	}()
 
 	err = dht1.Listen()
@@ -97,6 +98,7 @@ func TestReconnect(t *testing.T) {
 	err = dht1.Listen()
 	assert.Equal(t, "closed", err.Error())
 
+	<-done
 	<-done
 }
 
