@@ -37,8 +37,9 @@ type queryDataFindValue struct {
 }
 
 type queryDataStore struct {
-	Data []byte
-	Key  []byte
+	Data       []byte
+	Key        []byte
+	Publishing bool // Whether or not we are the original publisher
 }
 
 type responseDataFindNode struct {

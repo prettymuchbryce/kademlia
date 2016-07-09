@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"math"
+	"math/big"
 	"math/rand"
 	"net"
 	"sort"
@@ -154,6 +155,37 @@ func (ht *hashTable) removeNode(ID []byte) {
 	}
 
 	ht.RoutingTable[index] = bucket
+}
+
+func (ht *hashTable) getAllNodesInBucketCloserThan(bucket int, id []byte) [][]byte {
+	b := ht.RoutingTable[bucket]
+	var nodes [][]byte
+	for _, v := range b {
+		d1 := ht.getDistance(id, ht.Self.ID)
+		d2 := ht.getDistance(id, v.ID)
+
+		result := d1.Sub(d1, d2)
+		if result.Sign() > -1 {
+			nodes = append(nodes, v.ID)
+		}
+	}
+
+	return nodes
+}
+
+func (ht *hashTable) getTotalNodesInBucket(bucket int) int {
+	ht.mutex.Lock()
+	defer ht.mutex.Unlock()
+	return len(ht.RoutingTable[bucket])
+}
+
+func (ht *hashTable) getDistance(id1 []byte, id2 []byte) *big.Int {
+	var dst []byte
+	for i := 0; i < b; i++ {
+		dst[i] = id1[i] ^ id2[i]
+	}
+	ret := big.NewInt(0)
+	return ret.SetBytes(dst)
 }
 
 func (ht *hashTable) getRandomIDFromBucket(bucket int) []byte {

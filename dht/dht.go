@@ -3,6 +3,7 @@ package dht
 import (
 	"bytes"
 	"crypto/sha1"
+	"math"
 	"sort"
 	"time"
 
@@ -71,11 +72,27 @@ func NewDHT(store Store, options *Options) (*DHT, error) {
 	return dht, nil
 }
 
+func (dht *DHT) getExpirationTime(key []byte) time.Time {
+	bucket := dht.ht.getBucketIndexFromDifferingBit(key, dht.ht.Self.ID)
+	total := dht.ht.getTotalNodesInBucket(bucket)
+	closer := dht.ht.getAllNodesInBucketCloserThan(bucket, key)
+	score := total + len(closer)
+	if score > k {
+		return time.Now().Add(time.Hour * 24)
+	} else {
+		day := time.Hour * 24
+		seconds := day.Nanoseconds() * int64(math.Exp(float64(k/score)))
+		dur := time.Second * time.Duration(seconds)
+		return time.Now().Add(dur)
+	}
+}
+
 // Store TODO
 func (dht *DHT) Store(data []byte) (string, error) {
 	sha := sha1.New()
 	key := sha.Sum(data)
-	dht.store.Store(key, data)
+	expiration := dht.getExpirationTime(key)
+	dht.store.Store(key, data, expiration, true)
 	_, _, err := dht.iterate(iterateStore, key[:], data)
 	if err != nil {
 		return "", err
@@ -430,7 +447,8 @@ func (dht *DHT) listen() {
 			case messageTypeQueryStore:
 				data := msg.Data.(*queryDataStore)
 				dht.addNode(newNode(msg.Sender))
-				dht.store.Store(data.Key, data.Data)
+				expiration := dht.getExpirationTime(data.Key)
+				dht.store.Store(data.Key, data.Data, expiration, false)
 			case messageTypeQueryPing:
 				response := &message{IsResponse: true}
 				response.Sender = dht.ht.Self
