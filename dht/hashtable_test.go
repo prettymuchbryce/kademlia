@@ -18,7 +18,7 @@ func TestFindNodeAllBuckets(t *testing.T) {
 	dht, _ := NewDHT(getInMemoryStore(), &Options{
 		ID:   id,
 		Port: "3000",
-		IP:   "127.0.0.1",
+		IP:   "0.0.0.0",
 		BootstrapNodes: []*NetworkNode{&NetworkNode{
 			ID:   getZerodIDWithNthByte(0, byte(math.Pow(2, 7))),
 			Port: 3001,
@@ -39,7 +39,7 @@ func TestFindNodeAllBuckets(t *testing.T) {
 			n := newNode(&NetworkNode{})
 			n.ID = v.Sender.ID
 			r.Receiver = n.NetworkNode
-			r.Sender = &NetworkNode{ID: getIDWithValues(1), IP: net.ParseIP("127.0.0.1"), Port: 3001}
+			r.Sender = &NetworkNode{ID: getIDWithValues(1), IP: net.ParseIP("0.0.0.0"), Port: 3001}
 
 			responseData := &responseDataFindNode{}
 			responseData.Closest = []*NetworkNode{&NetworkNode{ID: getZerodIDWithNthByte(k, byte(math.Pow(2, float64(i))))}}
@@ -71,7 +71,7 @@ func TestNodeTimeout(t *testing.T) {
 	dht, _ := NewDHT(getInMemoryStore(), &Options{
 		ID:   id,
 		Port: "3000",
-		IP:   "127.0.0.1",
+		IP:   "0.0.0.0",
 		BootstrapNodes: []*NetworkNode{&NetworkNode{
 			ID:   getZerodIDWithNthByte(9, byte(255)),
 			Port: 3001,
@@ -93,7 +93,7 @@ func TestNodeTimeout(t *testing.T) {
 				n := newNode(&NetworkNode{})
 				n.ID = v.Sender.ID
 				r.Receiver = n.NetworkNode
-				r.Sender = &NetworkNode{ID: getIDWithValues(1), IP: net.ParseIP("127.0.0.1"), Port: 3001}
+				r.Sender = &NetworkNode{ID: getIDWithValues(1), IP: net.ParseIP("0.0.0.0"), Port: 3001}
 
 				id := getZerodIDWithNthByte(9, byte(math.Pow(2, 7)))
 				if i < 255-k {

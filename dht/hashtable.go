@@ -2,12 +2,14 @@ package dht
 
 import (
 	"bytes"
-	"crypto/rand"
 	"errors"
+	"math"
+	"math/rand"
 	"net"
 	"sort"
 	"strconv"
 	"sync"
+	"time"
 )
 
 const (
@@ -37,6 +39,8 @@ type hashTable struct {
 	RoutingTable [][]*node // 160x20
 
 	mutex *sync.Mutex
+
+	refreshMap [b]time.Time
 }
 
 func newHashTable(options *Options) (*hashTable, error) {
@@ -72,6 +76,18 @@ func newHashTable(options *Options) (*hashTable, error) {
 	}
 
 	return ht, nil
+}
+
+func (ht *hashTable) resetRefreshTimeForBucket(bucket int) {
+	ht.mutex.Lock()
+	defer ht.mutex.Unlock()
+	ht.refreshMap[bucket] = time.Now()
+}
+
+func (ht *hashTable) getRefreshTimeForBucket(bucket int) time.Time {
+	ht.mutex.Lock()
+	defer ht.mutex.Unlock()
+	return ht.refreshMap[bucket]
 }
 
 func (ht *hashTable) getClosestContacts(num int, target []byte, ignoredNodes []*NetworkNode) *shortList {
@@ -140,8 +156,43 @@ func (ht *hashTable) removeNode(ID []byte) {
 	ht.RoutingTable[index] = bucket
 }
 
+func (ht *hashTable) getRandomIDFromBucket(bucket int) []byte {
+	ht.mutex.Lock()
+	defer ht.mutex.Unlock()
+	// Set the new ID to to be equal in every byte up to
+	// the byte of the first differing bit in the bucket
+	var byteIndex int = bucket / 8
+	id := ht.Self.ID[:byteIndex]
+	differingBitStart := bucket - byteIndex*8
+
+	var firstByte byte
+	// check each bit from left to right in order
+	for i := 0; i < 8; i++ {
+		// Set the value of the bit to be the same as the ID
+		// up to the differing bit. Then begin randomizing
+		var bit bool
+		if i < differingBitStart {
+			bit = hasBit(ht.Self.ID[byteIndex], uint(i))
+		} else {
+			bit = rand.Intn(2) == 1
+		}
+
+		if bit {
+			firstByte += byte(math.Pow(2, float64(7-i)))
+		}
+	}
+
+	// Randomize each remaining byte
+	for i := byteIndex + 1; i < 20; i++ {
+		randomByte := byte(rand.Intn(256))
+		id = append(id, randomByte)
+	}
+
+	return id
+}
+
 func (ht *hashTable) getBucketIndexFromDifferingBit(id1 []byte, id2 []byte) int {
-	// Look at each byte from right to left
+	// Look at each byte from left to right
 	for j := 0; j < len(id1); j++ {
 		// xor the byte
 		xor := id1[j] ^ id2[j]

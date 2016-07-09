@@ -18,8 +18,10 @@ var (
 // Network TODO
 type networking interface {
 	sendMessage(*message, int64, bool) (chan (*message), error)
-	getMessage() *message
-	getMessageFin()
+	getMessage() chan (*message)
+	messagesFin()
+	timersFin()
+	getDisconnect() chan (int)
 	init()
 	createSocket(host string, port string) error
 	listen() error
@@ -28,32 +30,44 @@ type networking interface {
 }
 
 type realNetworking struct {
-	socket      *utp.Socket
-	sendChan    chan (*message)
-	recvChan    chan (*message)
-	dcChan      chan (int)
-	address     *net.UDPAddr
-	connection  *net.UDPConn
-	mutex       *sync.Mutex
-	connected   bool
-	responseMap map[int64]chan (*message)
-	connections []net.Conn
+	socket        *utp.Socket
+	sendChan      chan (*message)
+	recvChan      chan (*message)
+	dcChan        chan (int)
+	dcTimersChan  chan (int)
+	dcMessageChan chan (int)
+	address       *net.UDPAddr
+	connection    *net.UDPConn
+	mutex         *sync.Mutex
+	connected     bool
+	responseMap   map[int64]chan (*message)
+	connections   []net.Conn
 }
 
 func (rn *realNetworking) init() {
 	rn.mutex = &sync.Mutex{}
 	rn.sendChan = make(chan (*message))
 	rn.recvChan = make(chan (*message))
-	rn.dcChan = make(chan (int))
+	rn.dcChan = make(chan (int), 10)
+	rn.dcTimersChan = make(chan (int))
+	rn.dcMessageChan = make(chan (int))
 	rn.responseMap = make(map[int64]chan (*message))
 }
 
-func (rn *realNetworking) getMessage() *message {
-	return <-rn.recvChan
+func (rn *realNetworking) getMessage() chan (*message) {
+	return rn.recvChan
 }
 
-func (rn *realNetworking) getMessageFin() {
-	rn.dcChan <- 1
+func (rn *realNetworking) messagesFin() {
+	rn.dcMessageChan <- 1
+}
+
+func (rn *realNetworking) getDisconnect() chan (int) {
+	return rn.dcChan
+}
+
+func (rn *realNetworking) timersFin() {
+	rn.dcTimersChan <- 1
 }
 
 func (rn *realNetworking) createSocket(host string, port string) error {
@@ -108,9 +122,15 @@ func (rn *realNetworking) cancelResponse(id int64) {
 }
 
 func (rn *realNetworking) disconnect() error {
+	rn.dcChan <- 1
+	rn.dcChan <- 1
+	<-rn.dcTimersChan
+	<-rn.dcMessageChan
 	close(rn.sendChan)
 	close(rn.recvChan)
-	<-rn.dcChan
+	close(rn.dcTimersChan)
+	close(rn.dcMessageChan)
+	close(rn.dcChan)
 	rn.mutex.Lock()
 	for _, v := range rn.connections {
 		v.Close()

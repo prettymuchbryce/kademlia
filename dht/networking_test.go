@@ -30,11 +30,19 @@ func (net *mockNetworking) init() {
 	net.send = make(chan (*message))
 }
 
-func (net *mockNetworking) getMessageFin() {
+func (net *mockNetworking) messagesFin() {
 
 }
 
-func (net *mockNetworking) getMessage() *message {
+func (net *mockNetworking) timersFin() {
+
+}
+
+func (net *mockNetworking) getDisconnect() chan (int) {
+	return nil
+}
+
+func (net *mockNetworking) getMessage() chan (*message) {
 	return nil
 }
 

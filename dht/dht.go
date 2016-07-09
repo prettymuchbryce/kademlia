@@ -107,7 +107,7 @@ func (dht *DHT) CreateSocket() error {
 	port := dht.options.Port
 
 	if ip == "" {
-		ip = "127.0.0.1"
+		ip = "0.0.0.0"
 	}
 	if port == "" {
 		port = "3000"
@@ -121,6 +121,7 @@ func (dht *DHT) CreateSocket() error {
 
 func (dht *DHT) Listen() error {
 	go dht.listen()
+	go dht.timers()
 	return dht.networking.listen()
 }
 
@@ -160,8 +161,12 @@ func (dht *DHT) iterate(t int, target []byte, data []byte) (value []byte, closes
 
 	closestNode := sl.Nodes[0]
 
+	if t == iterateFindNode {
+		bucket := dht.ht.getBucketIndexFromDifferingBit(target, dht.ht.Self.ID)
+		dht.ht.resetRefreshTimeForBucket(bucket)
+	}
+
 	for {
-		// queries := []*message{}
 		queries := []*chanQuery{}
 		// Next we send messages to the first (closest) alpha nodes in the
 		// shortlist and wait for a response
@@ -363,55 +368,79 @@ func (dht *DHT) addNode(node *node) {
 	dht.ht.RoutingTable[index] = bucket
 }
 
-func (dht *DHT) listen() {
+func (dht *DHT) timers() {
+	t := time.NewTicker(time.Minute * 1)
 	for {
-		msg := dht.networking.getMessage()
-		if msg == nil {
-			// Disconnected
-			dht.networking.getMessageFin()
+		select {
+		case <-t.C:
+			for i := 0; i < b; i++ {
+				if time.Since(dht.ht.getRefreshTimeForBucket(i)) > time.Second*tRefresh {
+					id := dht.ht.getRandomIDFromBucket(k)
+					dht.iterate(iterateFindNode, id, nil)
+				}
+			}
+		case <-dht.networking.getDisconnect():
+			t.Stop()
+			defer dht.networking.timersFin()
 			return
 		}
-		switch msg.Type {
-		case messageTypeQueryFindNode:
-			data := msg.Data.(*queryDataFindNode)
-			dht.addNode(newNode(msg.Sender))
-			closest := dht.ht.getClosestContacts(k, data.Target, []*NetworkNode{msg.Sender})
-			response := &message{IsResponse: true}
-			response.Sender = dht.ht.Self
-			response.Receiver = msg.Sender
-			response.Type = messageTypeResponseFindNode
-			responseData := &responseDataFindNode{}
-			responseData.Closest = closest.Nodes
-			response.Data = responseData
-			dht.networking.sendMessage(response, msg.ID, false)
-		case messageTypeQueryFindValue:
-			data := msg.Data.(*queryDataFindValue)
-			dht.addNode(newNode(msg.Sender))
-			value, exists := dht.store.Retrieve(data.Target)
-			response := &message{IsResponse: true}
-			response.ID = msg.ID
-			response.Receiver = msg.Sender
-			response.Sender = dht.ht.Self
-			response.Type = messageTypeResponseFindValue
-			responseData := &responseDataFindValue{}
-			if exists {
-				responseData.Value = value
-			} else {
-				closest := dht.ht.getClosestContacts(k, data.Target, []*NetworkNode{msg.Sender})
-				responseData.Closest = closest.Nodes
+	}
+}
+
+func (dht *DHT) listen() {
+	for {
+		select {
+		case msg := <-dht.networking.getMessage():
+			if msg == nil {
+				// Disconnected
+				dht.networking.messagesFin()
+				return
 			}
-			response.Data = responseData
-			dht.networking.sendMessage(response, msg.ID, false)
-		case messageTypeQueryStore:
-			data := msg.Data.(*queryDataStore)
-			dht.addNode(newNode(msg.Sender))
-			dht.store.Store(data.Key, data.Data)
-		case messageTypeQueryPing:
-			response := &message{IsResponse: true}
-			response.Sender = dht.ht.Self
-			response.Receiver = msg.Sender
-			response.Type = messageTypeResponsePing
-			dht.networking.sendMessage(response, msg.ID, false)
+			switch msg.Type {
+			case messageTypeQueryFindNode:
+				data := msg.Data.(*queryDataFindNode)
+				dht.addNode(newNode(msg.Sender))
+				closest := dht.ht.getClosestContacts(k, data.Target, []*NetworkNode{msg.Sender})
+				response := &message{IsResponse: true}
+				response.Sender = dht.ht.Self
+				response.Receiver = msg.Sender
+				response.Type = messageTypeResponseFindNode
+				responseData := &responseDataFindNode{}
+				responseData.Closest = closest.Nodes
+				response.Data = responseData
+				dht.networking.sendMessage(response, msg.ID, false)
+			case messageTypeQueryFindValue:
+				data := msg.Data.(*queryDataFindValue)
+				dht.addNode(newNode(msg.Sender))
+				value, exists := dht.store.Retrieve(data.Target)
+				response := &message{IsResponse: true}
+				response.ID = msg.ID
+				response.Receiver = msg.Sender
+				response.Sender = dht.ht.Self
+				response.Type = messageTypeResponseFindValue
+				responseData := &responseDataFindValue{}
+				if exists {
+					responseData.Value = value
+				} else {
+					closest := dht.ht.getClosestContacts(k, data.Target, []*NetworkNode{msg.Sender})
+					responseData.Closest = closest.Nodes
+				}
+				response.Data = responseData
+				dht.networking.sendMessage(response, msg.ID, false)
+			case messageTypeQueryStore:
+				data := msg.Data.(*queryDataStore)
+				dht.addNode(newNode(msg.Sender))
+				dht.store.Store(data.Key, data.Data)
+			case messageTypeQueryPing:
+				response := &message{IsResponse: true}
+				response.Sender = dht.ht.Self
+				response.Receiver = msg.Sender
+				response.Type = messageTypeResponsePing
+				dht.networking.sendMessage(response, msg.ID, false)
+			}
+		case <-dht.networking.getDisconnect():
+			dht.networking.messagesFin()
+			return
 		}
 	}
 }
