@@ -37,7 +37,8 @@ func (ms *MemoryStore) GetAllKeysForRefresh() []string {
 
 // ExpireKeys TODO
 func (ms *MemoryStore) ExpireKeys() {
-
+	ms.mutex.Lock()
+	defer ms.mutex.Unlock()
 }
 
 // Init TODO

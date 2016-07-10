@@ -180,12 +180,12 @@ func (ht *hashTable) getTotalNodesInBucket(bucket int) int {
 }
 
 func (ht *hashTable) getDistance(id1 []byte, id2 []byte) *big.Int {
-	var dst []byte
-	for i := 0; i < b; i++ {
+	var dst [k]byte
+	for i := 0; i < k; i++ {
 		dst[i] = id1[i] ^ id2[i]
 	}
 	ret := big.NewInt(0)
-	return ret.SetBytes(dst)
+	return ret.SetBytes(dst[:])
 }
 
 func (ht *hashTable) getRandomIDFromBucket(bucket int) []byte {

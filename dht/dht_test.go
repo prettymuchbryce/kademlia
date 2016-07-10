@@ -14,7 +14,7 @@ func TestBootstrapTwoNodes(t *testing.T) {
 	id1, _ := newID()
 	dht1, _ := NewDHT(getInMemoryStore(), &Options{
 		ID:   id1,
-		IP:   "0.0.0.0",
+		IP:   "127.0.0.1",
 		Port: "3000",
 	})
 
@@ -22,11 +22,11 @@ func TestBootstrapTwoNodes(t *testing.T) {
 		BootstrapNodes: []*NetworkNode{
 			&NetworkNode{
 				ID:   id1,
-				IP:   net.ParseIP("0.0.0.0"),
+				IP:   net.ParseIP("127.0.0.1"),
 				Port: 3000,
 			},
 		},
-		IP:   "0.0.0.0",
+		IP:   "127.0.0.1",
 		Port: "3001",
 	})
 
@@ -42,6 +42,7 @@ func TestBootstrapTwoNodes(t *testing.T) {
 	go func() {
 		go func() {
 			dht2.Bootstrap()
+
 			err := dht2.Disconnect()
 			assert.NoError(t, err)
 
@@ -70,7 +71,7 @@ func TestReconnect(t *testing.T) {
 	id1, _ := newID()
 	dht1, _ := NewDHT(getInMemoryStore(), &Options{
 		ID:   id1,
-		IP:   "0.0.0.0",
+		IP:   "127.0.0.1",
 		Port: "3000",
 	})
 
@@ -88,18 +89,18 @@ func TestReconnect(t *testing.T) {
 	err = dht1.CreateSocket()
 	assert.NoError(t, err)
 
-	// go func() {
-	// 	time.Sleep(1 * time.Second)
-	// 	err := dht1.Disconnect()
-	// 	assert.NoError(t, err)
-	// 	done <- true
-	// }()
-	//
-	// err = dht1.Listen()
-	// assert.Equal(t, "closed", err.Error())
-	//
-	// <-done
-	// <-done
+	go func() {
+		time.Sleep(1 * time.Second)
+		err := dht1.Disconnect()
+		assert.NoError(t, err)
+		done <- true
+	}()
+
+	err = dht1.Listen()
+	assert.Equal(t, "closed", err.Error())
+
+	<-done
+	<-done
 }
 
 func TestStoreAndFindValue(t *testing.T) {
@@ -108,7 +109,7 @@ func TestStoreAndFindValue(t *testing.T) {
 	id1, _ := newID()
 	dht1, _ := NewDHT(getInMemoryStore(), &Options{
 		ID:   id1,
-		IP:   "0.0.0.0",
+		IP:   "127.0.0.1",
 		Port: "3000",
 	})
 
@@ -116,11 +117,11 @@ func TestStoreAndFindValue(t *testing.T) {
 		BootstrapNodes: []*NetworkNode{
 			&NetworkNode{
 				ID:   id1,
-				IP:   net.ParseIP("0.0.0.0"),
+				IP:   net.ParseIP("127.0.0.1"),
 				Port: 3000,
 			},
 		},
-		IP:   "0.0.0.0",
+		IP:   "127.0.0.1",
 		Port: "3001",
 	})
 

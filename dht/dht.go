@@ -73,10 +73,21 @@ func NewDHT(store Store, options *Options) (*DHT, error) {
 }
 
 func (dht *DHT) getExpirationTime(key []byte) time.Time {
+	if len(key) != 20 {
+		panic("WTF")
+	}
 	bucket := dht.ht.getBucketIndexFromDifferingBit(key, dht.ht.Self.ID)
-	total := dht.ht.getTotalNodesInBucket(bucket)
+	var total int
+	for i := 0; i < bucket; i++ {
+		total += dht.ht.getTotalNodesInBucket(i)
+	}
 	closer := dht.ht.getAllNodesInBucketCloserThan(bucket, key)
 	score := total + len(closer)
+
+	if score == 0 {
+		score = 1
+	}
+
 	if score > k {
 		return time.Now().Add(time.Hour * 24)
 	} else {
@@ -89,8 +100,8 @@ func (dht *DHT) getExpirationTime(key []byte) time.Time {
 
 // Store TODO
 func (dht *DHT) Store(data []byte) (string, error) {
-	sha := sha1.New()
-	key := sha.Sum(data)
+	sha := sha1.Sum(data)
+	key := sha[:]
 	expiration := dht.getExpirationTime(key)
 	dht.store.Store(key, data, expiration, true)
 	_, _, err := dht.iterate(iterateStore, key[:], data)
@@ -303,6 +314,10 @@ func (dht *DHT) iterate(t int, target []byte, data []byte) (value []byte, closes
 			}
 		}
 
+		if len(sl.Nodes) == 0 {
+			return nil, nil, nil
+		}
+
 		sort.Sort(sl)
 
 		// If closestNode is unchanged then we are done
@@ -396,6 +411,15 @@ func (dht *DHT) timers() {
 					dht.iterate(iterateFindNode, id, nil)
 				}
 			}
+
+			keys := dht.store.GetAllKeysForRefresh()
+			for _, key := range keys {
+				keyBytes := b58.Decode(key)
+				value, _ := dht.store.Retrieve(keyBytes)
+				dht.iterate(iterateStore, keyBytes, value)
+			}
+
+			dht.store.ExpireKeys()
 		case <-dht.networking.getDisconnect():
 			t.Stop()
 			defer dht.networking.timersFin()
