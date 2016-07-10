@@ -17,9 +17,10 @@ type Store interface {
 
 // MemoryStore TODO
 type MemoryStore struct {
-	data       map[string][]byte
 	mutex      *sync.Mutex
+	data       map[string][]byte
 	refreshMap map[string]time.Time
+	expireMap  map[string]time.Time
 }
 
 // GetKeysToRepublish TODO
@@ -39,6 +40,13 @@ func (ms *MemoryStore) GetAllKeysForRefresh() []string {
 func (ms *MemoryStore) ExpireKeys() {
 	ms.mutex.Lock()
 	defer ms.mutex.Unlock()
+	for k, v := range ms.expireMap {
+		if time.Now().After(v) {
+			delete(ms.refreshMap, k)
+			delete(ms.expireMap, k)
+			delete(ms.data, k)
+		}
+	}
 }
 
 // Init TODO
@@ -46,6 +54,7 @@ func (ms *MemoryStore) Init() {
 	ms.data = make(map[string][]byte)
 	ms.mutex = &sync.Mutex{}
 	ms.refreshMap = make(map[string]time.Time)
+	ms.expireMap = make(map[string]time.Time)
 }
 
 // Store TODO
@@ -53,6 +62,7 @@ func (ms *MemoryStore) Store(key []byte, data []byte, expiration time.Time, publ
 	ms.mutex.Lock()
 	defer ms.mutex.Unlock()
 	ms.refreshMap[string(key)] = time.Now().Add(time.Hour * 1)
+	ms.expireMap[string(key)] = expiration
 	ms.data[string(key)] = data
 	return nil
 }

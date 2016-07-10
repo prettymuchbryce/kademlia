@@ -90,7 +90,7 @@ func (rn *realNetworking) sendMessage(msg *message, id int64, expectResponse boo
 	defer rn.mutex.Unlock()
 	msg.ID = id
 
-	conn, err := rn.socket.Dial(msg.Receiver.IP.String() + ":" + strconv.Itoa(msg.Receiver.Port))
+	conn, err := utp.Dial(msg.Receiver.IP.String() + ":" + strconv.Itoa(msg.Receiver.Port))
 	if err != nil {
 		return nil, err
 	}
@@ -131,14 +131,21 @@ func (rn *realNetworking) disconnect() error {
 	close(rn.dcTimersChan)
 	close(rn.dcMessageChan)
 	close(rn.dcChan)
+	err := rn.socket.Close()
 	rn.mutex.Lock()
 	for _, v := range rn.connections {
 		v.Close()
+		for {
+			// make sure each conn is closed
+			if _, err := v.Read([]byte{}); err == io.EOF {
+				break
+			}
+		}
 	}
 	rn.connections = []net.Conn{}
 	rn.connected = false
 	rn.mutex.Unlock()
-	return rn.socket.Close()
+	return err
 }
 
 func (rn *realNetworking) listen() error {
@@ -156,9 +163,17 @@ func (rn *realNetworking) listen() error {
 			for {
 				// Wait for messages
 				msg, err := deserializeMessage(conn)
+				rn.mutex.Lock()
+				rn.mutex.Unlock()
 				if err != nil {
 					if err == io.EOF {
 						conn.Close()
+						for {
+							// make sure conn is closed
+							if _, err := conn.Read([]byte{}); err == io.EOF {
+								break
+							}
+						}
 						rn.mutex.Lock()
 						for k, v := range rn.connections {
 							if v == conn {
@@ -188,6 +203,4 @@ func (rn *realNetworking) listen() error {
 			}
 		}(conn)
 	}
-
-	return nil
 }

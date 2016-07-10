@@ -1,8 +1,9 @@
 TODO:
+    fix socket issue
     test message timeouts
     test refresh
-    expiration
-    replication
+    test expiration
+    test replication
 
 Nice to have:
     loose parallelism for iterative lookups

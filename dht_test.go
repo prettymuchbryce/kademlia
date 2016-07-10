@@ -79,7 +79,8 @@ func TestReconnect(t *testing.T) {
 	assert.NoError(t, err)
 
 	go func() {
-		dht1.Disconnect()
+		err := dht1.Disconnect()
+		assert.NoError(t, err)
 		done <- true
 	}()
 
@@ -90,7 +91,6 @@ func TestReconnect(t *testing.T) {
 	assert.NoError(t, err)
 
 	go func() {
-		time.Sleep(1 * time.Second)
 		err := dht1.Disconnect()
 		assert.NoError(t, err)
 		done <- true
