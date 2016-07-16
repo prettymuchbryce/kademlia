@@ -1,4 +1,4 @@
-package dht
+package main
 
 import (
 	"errors"
@@ -33,7 +33,8 @@ type realNetworking struct {
 	socket        *utp.Socket
 	sendChan      chan (*message)
 	recvChan      chan (*message)
-	dcChan        chan (int)
+	dcStartChan   chan (int)
+	dcEndChan     chan (int)
 	dcTimersChan  chan (int)
 	dcMessageChan chan (int)
 	address       *net.UDPAddr
@@ -42,16 +43,20 @@ type realNetworking struct {
 	connected     bool
 	responseMap   map[int64]chan (*message)
 	connections   []net.Conn
+	aliveConns    *sync.WaitGroup
 }
 
 func (rn *realNetworking) init() {
 	rn.mutex = &sync.Mutex{}
 	rn.sendChan = make(chan (*message))
 	rn.recvChan = make(chan (*message))
-	rn.dcChan = make(chan (int), 10)
+	rn.dcStartChan = make(chan (int), 10)
+	rn.dcEndChan = make(chan (int), 10)
 	rn.dcTimersChan = make(chan (int))
 	rn.dcMessageChan = make(chan (int))
 	rn.responseMap = make(map[int64]chan (*message))
+	rn.aliveConns = &sync.WaitGroup{}
+	rn.connected = false
 }
 
 func (rn *realNetworking) getMessage() chan (*message) {
@@ -63,7 +68,7 @@ func (rn *realNetworking) messagesFin() {
 }
 
 func (rn *realNetworking) getDisconnect() chan (int) {
-	return rn.dcChan
+	return rn.dcStartChan
 }
 
 func (rn *realNetworking) timersFin() {
@@ -122,29 +127,35 @@ func (rn *realNetworking) cancelResponse(id int64) {
 }
 
 func (rn *realNetworking) disconnect() error {
-	rn.dcChan <- 1
-	rn.dcChan <- 1
+	rn.mutex.Lock()
+	if !rn.connected {
+		rn.mutex.Unlock()
+		return errors.New("not connected")
+	}
+	rn.dcStartChan <- 1
+	rn.dcStartChan <- 1
 	<-rn.dcTimersChan
 	<-rn.dcMessageChan
 	close(rn.sendChan)
 	close(rn.recvChan)
 	close(rn.dcTimersChan)
 	close(rn.dcMessageChan)
-	close(rn.dcChan)
+	close(rn.dcStartChan)
 	err := rn.socket.Close()
-	rn.mutex.Lock()
-	for _, v := range rn.connections {
-		v.Close()
-		for {
-			// make sure each conn is closed
-			if _, err := v.Read([]byte{}); err == io.EOF {
-				break
-			}
-		}
-	}
+	// for _, v := range rn.connections {
+	// 	v.Close()
+	// 	for {
+	// 		// make sure each conn is closed
+	// 		if _, err := v.Read([]byte{}); err == io.EOF {
+	// 			break
+	// 		}
+	// 	}
+	// }
+	// rn.aliveConns.Wait()
 	rn.connections = []net.Conn{}
 	rn.connected = false
 	rn.mutex.Unlock()
+	rn.dcEndChan <- 1
 	return err
 }
 
@@ -152,11 +163,14 @@ func (rn *realNetworking) listen() error {
 	for {
 		conn, err := rn.socket.Accept()
 		if err != nil {
+			rn.disconnect()
+			<-rn.dcEndChan
 			return err
 		}
 
 		rn.mutex.Lock()
 		rn.connections = append(rn.connections, conn)
+		// rn.aliveConns.Add(1)
 		rn.mutex.Unlock()
 
 		go func(conn net.Conn) {
@@ -168,13 +182,14 @@ func (rn *realNetworking) listen() error {
 				if err != nil {
 					if err == io.EOF {
 						conn.Close()
-						for {
-							// make sure conn is closed
-							if _, err := conn.Read([]byte{}); err == io.EOF {
-								break
-							}
-						}
+						// for {
+						// 	// make sure conn is closed
+						// 	if _, err := conn.Read([]byte{}); err == io.EOF {
+						// 		break
+						// 	}
+						// }
 						rn.mutex.Lock()
+						// rn.aliveConns.Done()
 						for k, v := range rn.connections {
 							if v == conn {
 								rn.connections = append(rn.connections[:k], rn.connections[k+1:]...)

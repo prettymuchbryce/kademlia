@@ -1,4 +1,4 @@
-package dht
+package main
 
 type mockNetworking struct {
 	recv chan (*message)

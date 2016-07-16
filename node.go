@@ -1,4 +1,4 @@
-package dht
+package main
 
 import (
 	"bytes"

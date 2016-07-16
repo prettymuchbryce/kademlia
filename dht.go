@@ -1,4 +1,4 @@
-package dht
+package main
 
 import (
 	"bytes"
@@ -401,7 +401,7 @@ func (dht *DHT) addNode(node *node) {
 }
 
 func (dht *DHT) timers() {
-	t := time.NewTicker(time.Minute * 1)
+	t := time.NewTicker(time.Nanosecond)
 	for {
 		select {
 		case <-t.C:
@@ -422,7 +422,7 @@ func (dht *DHT) timers() {
 			dht.store.ExpireKeys()
 		case <-dht.networking.getDisconnect():
 			t.Stop()
-			defer dht.networking.timersFin()
+			dht.networking.timersFin()
 			return
 		}
 	}

@@ -1,4 +1,4 @@
-package dht
+package main
 
 import (
 	"bytes"
@@ -63,6 +63,10 @@ func newHashTable(options *Options) (*hashTable, error) {
 	if options.IP == "" || options.Port == "" {
 		// TODO don't panic, bubble up.
 		return nil, errors.New("Port and IP required")
+	}
+
+	for i := 0; i < b; i++ {
+		ht.resetRefreshTimeForBucket(i)
 	}
 
 	ht.Self.IP = net.ParseIP(options.IP)
