@@ -23,7 +23,7 @@ type MemoryStore struct {
 	expireMap  map[string]time.Time
 }
 
-// GetKeysToRepublish TODO
+// GetAllKeysForRefresh TODO
 func (ms *MemoryStore) GetAllKeysForRefresh() []string {
 	ms.mutex.Lock()
 	defer ms.mutex.Unlock()
