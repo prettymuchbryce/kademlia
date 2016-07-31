@@ -8,6 +8,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// Creates two DHTs, bootstrap one using the other, ensure that they both know
+// about each other afterwards.
 func TestBootstrapTwoNodes(t *testing.T) {
 	done := make(chan bool)
 
@@ -68,6 +70,9 @@ func TestBootstrapTwoNodes(t *testing.T) {
 	<-done
 }
 
+// Create two DHTs have them connect and bootstrap, then disconnect. Repeat
+// 100 times to ensure that we can use the same IP and port without EADDRINUSE
+// errors.
 func TestReconnect(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		done := make(chan bool)
@@ -129,6 +134,8 @@ func TestReconnect(t *testing.T) {
 	}
 }
 
+// Create two DHTs and have them connect. Send a store message from one node
+// to another. Ensure that the other node now has this data in its store.
 func TestStoreAndFindValue(t *testing.T) {
 	done := make(chan bool)
 

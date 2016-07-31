@@ -389,8 +389,8 @@ func (dht *DHT) addNode(node *node) {
 			case <-ch:
 				return
 			case <-time.After(time.Second * tPingMax):
-				bucket = append(bucket, node)
 				bucket = bucket[1:]
+				bucket = append(bucket, node)
 			}
 		}
 	} else {

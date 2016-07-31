@@ -64,9 +64,15 @@ func TestFindNodeAllBuckets(t *testing.T) {
 	}
 }
 
+// Tests timing out of nodes in a bucket. DHT bootstraps networks and learns
+// about 20 subsequent nodes in the same bucket. Upon attempting to add the 21st
+// node to the now full bucket, we should recieve a ping to the very first node
+// added in order to determine if it is still alive.
 func TestNodeTimeout(t *testing.T) {
 	networking := newMockNetworking()
 	id := getIDWithValues(0)
+	done := make(chan (int))
+	pinged := make(chan (int))
 
 	dht, _ := NewDHT(getInMemoryStore(), &Options{
 		ID:   id,
@@ -82,7 +88,7 @@ func TestNodeTimeout(t *testing.T) {
 	dht.networking = networking
 	dht.CreateSocket()
 
-	var i = 254
+	var nodesAdded = 1
 
 	go func() {
 		for {
@@ -95,12 +101,13 @@ func TestNodeTimeout(t *testing.T) {
 				r.Receiver = n.NetworkNode
 				r.Sender = &NetworkNode{ID: getIDWithValues(1), IP: net.ParseIP("0.0.0.0"), Port: 3001}
 
-				id := getZerodIDWithNthByte(9, byte(math.Pow(2, 7)))
-				if i < 255-k {
-					i = 255
+				id := getIDWithValues(0)
+				if nodesAdded > k {
+					close(done)
+					return
 				}
-				id[9] = byte(i)
-				i--
+				id[9] = byte(255 - nodesAdded)
+				nodesAdded++
 
 				responseData := &responseDataFindNode{}
 				responseData.Closest = []*NetworkNode{&NetworkNode{ID: id}}
@@ -109,9 +116,14 @@ func TestNodeTimeout(t *testing.T) {
 				networking.send <- r
 			case messageTypeQueryPing:
 				assert.Equal(t, messageTypeQueryPing, v.Type)
+				assert.Equal(t, getZerodIDWithNthByte(9, byte(255)), v.Receiver.ID)
+				close(pinged)
 			}
 		}
 	}()
 
 	dht.Bootstrap()
+
+	<-done
+	<-pinged
 }
