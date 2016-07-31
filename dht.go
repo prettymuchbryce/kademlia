@@ -76,7 +76,7 @@ func (dht *DHT) getExpirationTime(key []byte) time.Time {
 	if len(key) != 20 {
 		panic("WTF")
 	}
-	bucket := dht.ht.getBucketIndexFromDifferingBit(key, dht.ht.Self.ID)
+	bucket := getBucketIndexFromDifferingBit(key, dht.ht.Self.ID)
 	var total int
 	for i := 0; i < bucket; i++ {
 		total += dht.ht.getTotalNodesInBucket(i)
@@ -190,7 +190,7 @@ func (dht *DHT) iterate(t int, target []byte, data []byte) (value []byte, closes
 	closestNode := sl.Nodes[0]
 
 	if t == iterateFindNode {
-		bucket := dht.ht.getBucketIndexFromDifferingBit(target, dht.ht.Self.ID)
+		bucket := getBucketIndexFromDifferingBit(target, dht.ht.Self.ID)
 		dht.ht.resetRefreshTimeForBucket(bucket)
 	}
 
@@ -239,12 +239,9 @@ func (dht *DHT) iterate(t int, target []byte, data []byte) (value []byte, closes
 			ch, err := dht.networking.sendMessage(query, dht.msgCounter, true)
 			dht.msgCounter++
 			if err != nil {
-				// Node was unreachable for some reason. We should remove it.
-				// TODO Does it make more sense to deprioritize the node to
-				// the end of the bucket in hopes that it could come back online?
-				if err.Error() == "timed out waiting for ack" {
-					dht.ht.removeNode(query.Receiver.ID)
-				}
+				// Node was unreachable for some reason. We will remove it from
+				// the shortlist, but keep it around in hopes that it might
+				// come back online in the future.
 				sl.RemoveNode(query.Receiver)
 				continue
 			}
@@ -256,9 +253,16 @@ func (dht *DHT) iterate(t int, target []byte, data []byte) (value []byte, closes
 			go func() {
 				select {
 				case result := <-q.ch:
+					// TODO sanity check incoming messages ?
+					// Make sure that the node id matches the one in the
+					// query along with some other data. Otherwise it
+					// becomes fairly easy to break the network with
+					// some bad messages
 					if result == nil {
-						dht.networking.cancelResponse(q.query.ID)
+						panic("This should never happen")
+						// dht.networking.cancelResponse(q.query.ID)
 					} else {
+						dht.ht.markNodeAsSeen(result.Sender.ID)
 						resultChan <- result
 					}
 				}
@@ -276,6 +280,7 @@ func (dht *DHT) iterate(t int, target []byte, data []byte) (value []byte, closes
 					break Loop
 				}
 			case <-time.After(time.Second * tMsgTimeout):
+				// TODO kill channel?
 				close(resultChan)
 				break Loop
 			}
@@ -357,18 +362,19 @@ func (dht *DHT) iterate(t int, target []byte, data []byte) (value []byte, closes
 // we store these buckets in big-endian order so we look at the bits
 // from right to left in order to find the appropriate bucket
 func (dht *DHT) addNode(node *node) {
+	index := getBucketIndexFromDifferingBit(dht.ht.Self.ID, node.ID)
+
+	// Make sure node doesn't already exist
+	// If it does, mark it as seen
+	if dht.ht.doesNodeExistInBucket(index, node.ID) {
+		dht.ht.markNodeAsSeen(node.ID)
+		return
+	}
+
 	dht.ht.mutex.Lock()
 	defer dht.ht.mutex.Unlock()
 
-	index := dht.ht.getBucketIndexFromDifferingBit(dht.ht.Self.ID, node.ID)
 	bucket := dht.ht.RoutingTable[index]
-
-	// Make sure node doesn't already exist
-	for _, v := range bucket {
-		if bytes.Compare(v.ID, node.ID) == 0 {
-			return
-		}
-	}
 
 	if len(bucket) == k {
 		// If the bucket is full we need to ping the first node to find out

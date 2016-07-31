@@ -37,6 +37,10 @@ type hashTable struct {
 	Self *NetworkNode
 
 	// Routing table a list of all known nodes in the network
+	// Buckets are sorted by least recently seen e.g.
+	// [ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ]
+	//  ^                                                           ^
+	//  └ Least recently seen                    Most recently seen ┘
 	RoutingTable [][]*node // 160x20
 
 	mutex *sync.Mutex
@@ -95,12 +99,44 @@ func (ht *hashTable) getRefreshTimeForBucket(bucket int) time.Time {
 	return ht.refreshMap[bucket]
 }
 
+func (ht *hashTable) markNodeAsSeen(node []byte) {
+	ht.mutex.Lock()
+	defer ht.mutex.Unlock()
+	index := getBucketIndexFromDifferingBit(ht.Self.ID, node)
+	bucket := ht.RoutingTable[index]
+	nodeIndex := -1
+	for i, v := range bucket {
+		if bytes.Compare(v.ID, node) == 0 {
+			nodeIndex = i
+			break
+		}
+	}
+	if nodeIndex == -1 {
+		panic(errors.New("Tried to mark nonexistent node as seen"))
+	}
+
+	n := bucket[nodeIndex]
+	bucket = append(bucket[:nodeIndex], bucket[nodeIndex+1:]...)
+	bucket = append(bucket, n)
+}
+
+func (ht *hashTable) doesNodeExistInBucket(bucket int, node []byte) bool {
+	ht.mutex.Lock()
+	defer ht.mutex.Unlock()
+	for _, v := range ht.RoutingTable[bucket] {
+		if bytes.Compare(v.ID, node) == 0 {
+			return true
+		}
+	}
+	return false
+}
+
 func (ht *hashTable) getClosestContacts(num int, target []byte, ignoredNodes []*NetworkNode) *shortList {
 	ht.mutex.Lock()
 	defer ht.mutex.Unlock()
 	// First we need to build the list of adjacent indices to our target
 	// in order
-	index := ht.getBucketIndexFromDifferingBit(ht.Self.ID, target)
+	index := getBucketIndexFromDifferingBit(ht.Self.ID, target)
 	indexList := []int{index}
 	i := index - 1
 	j := index + 1
@@ -149,7 +185,7 @@ func (ht *hashTable) removeNode(ID []byte) {
 	ht.mutex.Lock()
 	defer ht.mutex.Unlock()
 
-	index := ht.getBucketIndexFromDifferingBit(ht.Self.ID, ID)
+	index := getBucketIndexFromDifferingBit(ht.Self.ID, ID)
 	bucket := ht.RoutingTable[index]
 
 	for i, v := range bucket {
@@ -227,7 +263,7 @@ func (ht *hashTable) getRandomIDFromBucket(bucket int) []byte {
 	return id
 }
 
-func (ht *hashTable) getBucketIndexFromDifferingBit(id1 []byte, id2 []byte) int {
+func getBucketIndexFromDifferingBit(id1 []byte, id2 []byte) int {
 	// Look at each byte from left to right
 	for j := 0; j < len(id1); j++ {
 		// xor the byte
