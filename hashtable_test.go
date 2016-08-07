@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"math"
 	"net"
 	"testing"
@@ -83,7 +84,7 @@ func TestNodeTimeout(t *testing.T) {
 		Port: "3000",
 		IP:   "0.0.0.0",
 		BootstrapNodes: []*NetworkNode{&NetworkNode{
-			ID:   getZerodIDWithNthByte(9, byte(255)),
+			ID:   getZerodIDWithNthByte(1, byte(255)),
 			Port: 3001,
 			IP:   net.ParseIP("0.0.0.0"),
 		},
@@ -94,6 +95,8 @@ func TestNodeTimeout(t *testing.T) {
 	dht.CreateSocket()
 
 	var nodesAdded = 1
+	var firstNode []byte
+	var lastNode []byte
 
 	go func() {
 		for {
@@ -115,8 +118,14 @@ func TestNodeTimeout(t *testing.T) {
 					close(done)
 					return
 				}
-				id[9] = byte(255 - nodesAdded)
+				id[1] = byte(255 - nodesAdded)
 				nodesAdded++
+
+				if firstNode == nil {
+					firstNode = id
+				}
+
+				lastNode = id
 
 				responseData := &responseDataFindNode{}
 				responseData.Closest = []*NetworkNode{&NetworkNode{ID: id, IP: net.ParseIP("0.0.0.0"), Port: 3001}}
@@ -125,13 +134,18 @@ func TestNodeTimeout(t *testing.T) {
 				networking.send <- r
 			case messageTypePing:
 				assert.Equal(t, messageTypePing, v.Type)
-				assert.Equal(t, getZerodIDWithNthByte(9, byte(255)), v.Receiver.ID)
+				assert.Equal(t, getZerodIDWithNthByte(1, byte(255)), v.Receiver.ID)
 				close(pinged)
 			}
 		}
 	}()
 
 	dht.Bootstrap()
+
+	// ensure the first node in the table is the second node contacted, and the
+	// last is the last node contacted
+	assert.Equal(t, 0, bytes.Compare(dht.ht.RoutingTable[b-9][0].ID, firstNode))
+	assert.Equal(t, 0, bytes.Compare(dht.ht.RoutingTable[b-9][19].ID, lastNode))
 
 	<-done
 	<-pinged
