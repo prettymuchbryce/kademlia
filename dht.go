@@ -53,11 +53,6 @@ type Options struct {
 	ContactTimeout *time.Time
 }
 
-type chanQuery struct {
-	query *message
-	ch    chan (*message)
-}
-
 // NewDHT TODO
 func NewDHT(store Store, options *Options) (*DHT, error) {
 	dht := &DHT{}
@@ -142,7 +137,7 @@ func (dht *DHT) CreateSocket() error {
 	}
 
 	netMsgInit()
-	dht.networking.init()
+	dht.networking.init(dht.ht.Self)
 
 	return dht.networking.createSocket(ip, port)
 }
@@ -195,7 +190,8 @@ func (dht *DHT) iterate(t int, target []byte, data []byte) (value []byte, closes
 	}
 
 	for {
-		queries := []*chanQuery{}
+		expectedResponses := []*expectedResponse{}
+		numExpectedResponses := 0
 		// Next we send messages to the first (closest) alpha nodes in the
 		// shortlist and wait for a response
 
@@ -217,17 +213,17 @@ func (dht *DHT) iterate(t int, target []byte, data []byte) (value []byte, closes
 
 			switch t {
 			case iterateFindNode:
-				query.Type = messageTypeQueryFindNode
+				query.Type = messageTypeFindNode
 				queryData := &queryDataFindNode{}
 				queryData.Target = target
 				query.Data = queryData
 			case iterateFindValue:
-				query.Type = messageTypeQueryFindValue
+				query.Type = messageTypeFindValue
 				queryData := &queryDataFindValue{}
 				queryData.Target = target
 				query.Data = queryData
 			case iterateStore:
-				query.Type = messageTypeQueryFindNode
+				query.Type = messageTypeFindNode
 				queryData := &queryDataFindNode{}
 				queryData.Target = target
 				query.Data = queryData
@@ -236,7 +232,7 @@ func (dht *DHT) iterate(t int, target []byte, data []byte) (value []byte, closes
 			}
 
 			// Send the async queries and wait for a response
-			ch, err := dht.networking.sendMessage(query, dht.msgCounter, true)
+			res, err := dht.networking.sendMessage(query, dht.msgCounter, true)
 			dht.msgCounter++
 			if err != nil {
 				// Node was unreachable for some reason. We will remove it from
@@ -245,26 +241,40 @@ func (dht *DHT) iterate(t int, target []byte, data []byte) (value []byte, closes
 				sl.RemoveNode(query.Receiver)
 				continue
 			}
-			queries = append(queries, &chanQuery{query: query, ch: ch})
+
+			expectedResponses = append(expectedResponses, res)
 		}
 
+		numExpectedResponses = len(expectedResponses)
+
 		resultChan := make(chan (*message))
-		for _, q := range queries {
+		for _, r := range expectedResponses {
 			go func() {
 				select {
-				case result := <-q.ch:
-					// TODO sanity check incoming messages ?
-					// Make sure that the node id matches the one in the
-					// query along with some other data. Otherwise it
-					// becomes fairly easy to break the network with
-					// some bad messages
-					if result == nil {
-						panic("This should never happen")
-						// dht.networking.cancelResponse(q.query.ID)
-					} else {
-						dht.ht.markNodeAsSeen(result.Sender.ID)
-						resultChan <- result
+				case result := <-r.ch:
+					// Sanity check the response
+					if !areNodesEqual(r.node, result.Sender) {
+						dht.networking.cancelResponse(r)
+						panic("WHOOPS")
+						return
 					}
+
+					if r.query.Type != result.Type {
+						dht.networking.cancelResponse(r)
+						panic("WHOOPS")
+						return
+					}
+
+					if !result.IsResponse {
+						dht.networking.cancelResponse(r)
+						panic("WHOOPS")
+						return
+					}
+
+					dht.ht.markNodeAsSeen(result.Sender.ID)
+					resultChan <- result
+				case <-time.After(time.Second * tMsgTimeout):
+					dht.networking.cancelResponse(r)
 				}
 			}()
 		}
@@ -274,13 +284,16 @@ func (dht *DHT) iterate(t int, target []byte, data []byte) (value []byte, closes
 		for {
 			select {
 			case result := <-resultChan:
-				results = append(results, result)
-				if len(results) == len(queries) {
+				if result != nil {
+					results = append(results, result)
+				} else {
+					numExpectedResponses--
+				}
+				if len(results) == numExpectedResponses {
 					close(resultChan)
 					break Loop
 				}
 			case <-time.After(time.Second * tMsgTimeout):
-				// TODO kill channel?
 				close(resultChan)
 				break Loop
 			}
@@ -342,7 +355,7 @@ func (dht *DHT) iterate(t int, target []byte, data []byte) (value []byte, closes
 					query := &message{}
 					query.Receiver = n
 					query.Sender = dht.ht.Self
-					query.Type = messageTypeQueryStore
+					query.Type = messageTypeStore
 					queryData := &queryDataStore{}
 					queryData.Data = data
 					queryData.Key = target
@@ -384,15 +397,15 @@ func (dht *DHT) addNode(node *node) {
 		query := &message{}
 		query.Receiver = n
 		query.Sender = dht.ht.Self
-		query.Type = messageTypeQueryPing
-		ch, err := dht.networking.sendMessage(query, dht.msgCounter, true)
+		query.Type = messageTypePing
+		res, err := dht.networking.sendMessage(query, dht.msgCounter, true)
 		dht.msgCounter++
 		if err != nil {
 			bucket = append(bucket, node)
 			bucket = bucket[1:]
 		} else {
 			select {
-			case <-ch:
+			case <-res.ch:
 				return
 			case <-time.After(time.Second * tPingMax):
 				bucket = bucket[1:]
@@ -444,19 +457,19 @@ func (dht *DHT) listen() {
 				return
 			}
 			switch msg.Type {
-			case messageTypeQueryFindNode:
+			case messageTypeFindNode:
 				data := msg.Data.(*queryDataFindNode)
 				dht.addNode(newNode(msg.Sender))
 				closest := dht.ht.getClosestContacts(k, data.Target, []*NetworkNode{msg.Sender})
 				response := &message{IsResponse: true}
 				response.Sender = dht.ht.Self
 				response.Receiver = msg.Sender
-				response.Type = messageTypeResponseFindNode
+				response.Type = messageTypeFindNode
 				responseData := &responseDataFindNode{}
 				responseData.Closest = closest.Nodes
 				response.Data = responseData
 				dht.networking.sendMessage(response, msg.ID, false)
-			case messageTypeQueryFindValue:
+			case messageTypeFindValue:
 				data := msg.Data.(*queryDataFindValue)
 				dht.addNode(newNode(msg.Sender))
 				value, exists := dht.store.Retrieve(data.Target)
@@ -464,7 +477,7 @@ func (dht *DHT) listen() {
 				response.ID = msg.ID
 				response.Receiver = msg.Sender
 				response.Sender = dht.ht.Self
-				response.Type = messageTypeResponseFindValue
+				response.Type = messageTypeFindValue
 				responseData := &responseDataFindValue{}
 				if exists {
 					responseData.Value = value
@@ -474,16 +487,16 @@ func (dht *DHT) listen() {
 				}
 				response.Data = responseData
 				dht.networking.sendMessage(response, msg.ID, false)
-			case messageTypeQueryStore:
+			case messageTypeStore:
 				data := msg.Data.(*queryDataStore)
 				dht.addNode(newNode(msg.Sender))
 				expiration := dht.getExpirationTime(data.Key)
 				dht.store.Store(data.Key, data.Data, expiration, false)
-			case messageTypeQueryPing:
+			case messageTypePing:
 				response := &message{IsResponse: true}
 				response.Sender = dht.ht.Self
 				response.Receiver = msg.Sender
-				response.Type = messageTypeResponsePing
+				response.Type = messageTypePing
 				dht.networking.sendMessage(response, msg.ID, false)
 			}
 		case <-dht.networking.getDisconnect():

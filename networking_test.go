@@ -22,10 +22,10 @@ func (net *mockNetworking) createSocket(host string, port string) error {
 	return nil
 }
 
-func (net *mockNetworking) cancelResponse(id int64) {
+func (net *mockNetworking) cancelResponse(*expectedResponse) {
 }
 
-func (net *mockNetworking) init() {
+func (net *mockNetworking) init(self *NetworkNode) {
 	net.recv = make(chan (*message))
 	net.send = make(chan (*message))
 }
@@ -46,7 +46,11 @@ func (net *mockNetworking) getMessage() chan (*message) {
 	return nil
 }
 
-func (net *mockNetworking) sendMessage(q *message, id int64, expectResponse bool) (chan (*message), error) {
+func (net *mockNetworking) sendMessage(q *message, id int64, expectResponse bool) (*expectedResponse, error) {
 	net.recv <- q
-	return net.send, nil
+	if expectResponse {
+		return &expectedResponse{ch: net.send, query: q, node: q.Receiver, id: id}, nil
+	} else {
+		return nil, nil
+	}
 }

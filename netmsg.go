@@ -8,14 +8,10 @@ import (
 )
 
 const (
-	messageTypeQueryPing         = "QUERY_PING"
-	messageTypeResponsePing      = "RESPONSE_PING"
-	messageTypeQueryStore        = "QUERY_STORE"
-	messageTypeResponseStore     = "RESPONSE_STORE"
-	messageTypeQueryFindNode     = "QUERY_FIND_NODE"
-	messageTypeResponseFindNode  = "RESPONSE_FIND_NODE"
-	messageTypeQueryFindValue    = "QUERY_FIND_VALUE"
-	messageTypeResponseFindValue = "RESPONSE_FIND_VALUE"
+	messageTypePing = iota
+	messageTypeStore
+	messageTypeFindNode
+	messageTypeFindValue
 )
 
 type message struct {
@@ -23,7 +19,7 @@ type message struct {
 	Receiver   *NetworkNode
 	ID         int64
 	Error      error
-	Type       string
+	Type       int
 	IsResponse bool
 	Data       interface{}
 }

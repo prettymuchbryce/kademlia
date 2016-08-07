@@ -41,6 +41,19 @@ type shortList struct {
 	Comparator []byte
 }
 
+func areNodesEqual(n1 *NetworkNode, n2 *NetworkNode) bool {
+	if bytes.Compare(n1.ID, n2.ID) != 0 {
+		return false
+	}
+	if !n1.IP.Equal(n2.IP) {
+		return false
+	}
+	if n1.Port != n2.Port {
+		return false
+	}
+	return true
+}
+
 func (n *shortList) RemoveNode(node *NetworkNode) {
 	for i := 0; i < n.Len(); i++ {
 		if bytes.Compare(n.Nodes[i].ID, node.ID) == 0 {

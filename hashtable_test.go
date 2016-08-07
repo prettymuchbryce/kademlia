@@ -22,6 +22,7 @@ func TestFindNodeAllBuckets(t *testing.T) {
 		BootstrapNodes: []*NetworkNode{&NetworkNode{
 			ID:   getZerodIDWithNthByte(0, byte(math.Pow(2, 7))),
 			Port: 3001,
+			IP:   net.ParseIP("0.0.0.0"),
 		},
 		},
 	})
@@ -38,11 +39,14 @@ func TestFindNodeAllBuckets(t *testing.T) {
 			r := &message{}
 			n := newNode(&NetworkNode{})
 			n.ID = v.Sender.ID
+			n.IP = v.Sender.IP
+			n.Port = v.Sender.Port
 			r.Receiver = n.NetworkNode
 			r.Sender = &NetworkNode{ID: v.Receiver.ID, IP: net.ParseIP("0.0.0.0"), Port: 3001}
-
+			r.Type = v.Type
+			r.IsResponse = true
 			responseData := &responseDataFindNode{}
-			responseData.Closest = []*NetworkNode{&NetworkNode{ID: getZerodIDWithNthByte(k, byte(math.Pow(2, float64(i))))}}
+			responseData.Closest = []*NetworkNode{&NetworkNode{IP: net.ParseIP("0.0.0.0"), Port: 3001, ID: getZerodIDWithNthByte(k, byte(math.Pow(2, float64(i))))}}
 			i--
 			if i < 0 {
 				i = 7
@@ -81,6 +85,7 @@ func TestNodeTimeout(t *testing.T) {
 		BootstrapNodes: []*NetworkNode{&NetworkNode{
 			ID:   getZerodIDWithNthByte(9, byte(255)),
 			Port: 3001,
+			IP:   net.ParseIP("0.0.0.0"),
 		},
 		},
 	})
@@ -95,11 +100,15 @@ func TestNodeTimeout(t *testing.T) {
 			v := <-networking.recv
 			r := &message{}
 			switch v.Type {
-			case messageTypeQueryFindNode:
+			case messageTypeFindNode:
 				n := newNode(&NetworkNode{})
 				n.ID = v.Sender.ID
+				n.IP = v.Sender.IP
+				n.Port = v.Sender.Port
 				r.Receiver = n.NetworkNode
 				r.Sender = &NetworkNode{ID: v.Receiver.ID, IP: net.ParseIP("0.0.0.0"), Port: 3001}
+				r.Type = v.Type
+				r.IsResponse = true
 
 				id := getIDWithValues(0)
 				if nodesAdded > k {
@@ -110,12 +119,12 @@ func TestNodeTimeout(t *testing.T) {
 				nodesAdded++
 
 				responseData := &responseDataFindNode{}
-				responseData.Closest = []*NetworkNode{&NetworkNode{ID: id}}
+				responseData.Closest = []*NetworkNode{&NetworkNode{ID: id, IP: net.ParseIP("0.0.0.0"), Port: 3001}}
 
 				r.Data = responseData
 				networking.send <- r
-			case messageTypeQueryPing:
-				assert.Equal(t, messageTypeQueryPing, v.Type)
+			case messageTypePing:
+				assert.Equal(t, messageTypePing, v.Type)
 				assert.Equal(t, getZerodIDWithNthByte(9, byte(255)), v.Receiver.ID)
 				close(pinged)
 			}
@@ -127,64 +136,3 @@ func TestNodeTimeout(t *testing.T) {
 	<-done
 	<-pinged
 }
-
-// Tests timing out of messages. If a n
-// func TestMessageTimeout(t *testing.T) {
-// 	networking := newMockNetworking()
-// 	id := getIDWithValues(0)
-// 	done := make(chan (int))
-// 	pinged := make(chan (int))
-//
-// 	dht, _ := NewDHT(getInMemoryStore(), &Options{
-// 		ID:   id,
-// 		Port: "3000",
-// 		IP:   "0.0.0.0",
-// 		BootstrapNodes: []*NetworkNode{&NetworkNode{
-// 			ID:   getZerodIDWithNthByte(9, byte(255)),
-// 			Port: 3001,
-// 		},
-// 		},
-// 	})
-//
-// 	dht.networking = networking
-// 	dht.CreateSocket()
-//
-// 	var nodesAdded = 1
-//
-// 	go func() {
-// 		for {
-// 			v := <-networking.recv
-// 			r := &message{}
-// 			switch v.Type {
-// 			case messageTypeQueryFindNode:
-// 				n := newNode(&NetworkNode{})
-// 				n.ID = v.Sender.ID
-// 				r.Receiver = n.NetworkNode
-// 				r.Sender = &NetworkNode{ID: getIDWithValues(1), IP: net.ParseIP("0.0.0.0"), Port: 3001}
-//
-// 				id := getIDWithValues(0)
-// 				if nodesAdded > k {
-// 					close(done)
-// 					return
-// 				}
-// 				id[9] = byte(255 - nodesAdded)
-// 				nodesAdded++
-//
-// 				responseData := &responseDataFindNode{}
-// 				responseData.Closest = []*NetworkNode{&NetworkNode{ID: id}}
-//
-// 				r.Data = responseData
-// 				networking.send <- r
-// 			case messageTypeQueryPing:
-// 				assert.Equal(t, messageTypeQueryPing, v.Type)
-// 				assert.Equal(t, getZerodIDWithNthByte(9, byte(255)), v.Receiver.ID)
-// 				close(pinged)
-// 			}
-// 		}
-// 	}()
-//
-// 	dht.Bootstrap()
-//
-// 	<-done
-// 	<-pinged
-// }

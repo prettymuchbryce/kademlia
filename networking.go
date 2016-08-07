@@ -15,16 +15,16 @@ var (
 
 // Network TODO
 type networking interface {
-	sendMessage(*message, int64, bool) (chan (*message), error)
+	sendMessage(*message, int64, bool) (*expectedResponse, error)
 	getMessage() chan (*message)
 	messagesFin()
 	timersFin()
 	getDisconnect() chan (int)
-	init()
+	init(self *NetworkNode)
 	createSocket(host string, port string) error
 	listen() error
 	disconnect() error
-	cancelResponse(id int64)
+	cancelResponse(*expectedResponse)
 }
 
 type realNetworking struct {
@@ -39,11 +39,20 @@ type realNetworking struct {
 	connection    *net.UDPConn
 	mutex         *sync.Mutex
 	connected     bool
-	responseMap   map[int64]chan (*message)
+	responseMap   map[int64]*expectedResponse
 	aliveConns    *sync.WaitGroup
+	self          *NetworkNode
 }
 
-func (rn *realNetworking) init() {
+type expectedResponse struct {
+	ch    chan (*message)
+	query *message
+	node  *NetworkNode
+	id    int64
+}
+
+func (rn *realNetworking) init(self *NetworkNode) {
+	rn.self = self
 	rn.mutex = &sync.Mutex{}
 	rn.sendChan = make(chan (*message))
 	rn.recvChan = make(chan (*message))
@@ -51,7 +60,7 @@ func (rn *realNetworking) init() {
 	rn.dcEndChan = make(chan (int))
 	rn.dcTimersChan = make(chan (int))
 	rn.dcMessageChan = make(chan (int))
-	rn.responseMap = make(map[int64]chan (*message))
+	rn.responseMap = make(map[int64]*expectedResponse)
 	rn.aliveConns = &sync.WaitGroup{}
 	rn.connected = false
 }
@@ -90,7 +99,7 @@ func (rn *realNetworking) createSocket(host string, port string) error {
 	return nil
 }
 
-func (rn *realNetworking) sendMessage(msg *message, id int64, expectResponse bool) (chan (*message), error) {
+func (rn *realNetworking) sendMessage(msg *message, id int64, expectResponse bool) (*expectedResponse, error) {
 	rn.mutex.Lock()
 	defer rn.mutex.Unlock()
 	msg.ID = id
@@ -111,19 +120,24 @@ func (rn *realNetworking) sendMessage(msg *message, id int64, expectResponse boo
 	}
 
 	if expectResponse {
-		responseChan := make(chan (*message))
-		rn.responseMap[id] = responseChan
-		return responseChan, nil
+		expectedResponse := &expectedResponse{
+			ch:    make(chan (*message)),
+			node:  msg.Receiver,
+			query: msg,
+			id:    id,
+		}
+		rn.responseMap[id] = expectedResponse
+		return expectedResponse, nil
 	}
 
 	return nil, nil
 }
 
-func (rn *realNetworking) cancelResponse(id int64) {
+func (rn *realNetworking) cancelResponse(res *expectedResponse) {
 	rn.mutex.Lock()
 	defer rn.mutex.Unlock()
-	close(rn.responseMap[id])
-	delete(rn.responseMap, id)
+	close(rn.responseMap[res.id].ch)
+	delete(rn.responseMap, res.id)
 }
 
 func (rn *realNetworking) disconnect() error {
@@ -163,11 +177,18 @@ func (rn *realNetworking) listen() error {
 					return
 				}
 
+				if !areNodesEqual(msg.Receiver, rn.self) {
+					// TODO should we penalize this node somehow ? Ban it ?
+					panic("WHOOPS")
+
+					continue
+				}
+
 				rn.mutex.Lock()
 				if rn.connected {
 					if msg.IsResponse && rn.responseMap[msg.ID] != nil {
-						rn.responseMap[msg.ID] <- msg
-						close(rn.responseMap[msg.ID])
+						rn.responseMap[msg.ID].ch <- msg
+						close(rn.responseMap[msg.ID].ch)
 						delete(rn.responseMap, msg.ID)
 					} else {
 						rn.recvChan <- msg
