@@ -5,7 +5,6 @@ TODO:
     test refresh
     test expiration
     test replication
-    responseMap message timeouts
     test bad/malicious messages
 
 Nice to have:

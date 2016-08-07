@@ -200,6 +200,93 @@ func TestStoreAndFindValue(t *testing.T) {
 	<-done
 }
 
+// Tests sending a message which results in an error when attempting to
+// send over uTP
+func TestNetworkingSendError(t *testing.T) {
+	networking := newMockNetworking()
+	id := getIDWithValues(0)
+	done := make(chan (int))
+
+	dht, _ := NewDHT(getInMemoryStore(), &Options{
+		ID:   id,
+		Port: "3000",
+		IP:   "0.0.0.0",
+		BootstrapNodes: []*NetworkNode{&NetworkNode{
+			ID:   getZerodIDWithNthByte(1, byte(255)),
+			Port: 3001,
+			IP:   net.ParseIP("0.0.0.0"),
+		},
+		},
+	})
+
+	dht.networking = networking
+	dht.CreateSocket()
+
+	go func() {
+		v := <-networking.recv
+		assert.Nil(t, v)
+		close(done)
+	}()
+
+	networking.failNextSendMessage()
+
+	dht.Bootstrap()
+
+	dht.Disconnect()
+
+	<-done
+}
+
+// Tests sending a message which results in a successful send, but the node
+// never responds
+func TestNodeResponseSendError(t *testing.T) {
+	networking := newMockNetworking()
+	id := getIDWithValues(0)
+	done := make(chan (int))
+
+	dht, _ := NewDHT(getInMemoryStore(), &Options{
+		ID:   id,
+		Port: "3000",
+		IP:   "0.0.0.0",
+		BootstrapNodes: []*NetworkNode{&NetworkNode{
+			ID:   getZerodIDWithNthByte(1, byte(255)),
+			Port: 3001,
+			IP:   net.ParseIP("0.0.0.0"),
+		},
+		},
+	})
+
+	dht.networking = networking
+	dht.CreateSocket()
+
+	queries := 0
+
+	go func() {
+		for {
+			query := <-networking.recv
+			if query == nil {
+				return
+			}
+			if queries == 1 {
+				// Don't respond
+				close(done)
+			} else {
+				queries++
+				res := mockFindNodeResponse(query, getZerodIDWithNthByte(2, byte(255)))
+				networking.send <- res
+			}
+		}
+	}()
+
+	dht.Bootstrap()
+
+	assert.Equal(t, 1, dht.ht.totalNodes())
+
+	dht.Disconnect()
+
+	<-done
+}
+
 func getInMemoryStore() *MemoryStore {
 	memStore := &MemoryStore{}
 	memStore.Init()

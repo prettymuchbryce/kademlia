@@ -36,18 +36,13 @@ func TestFindNodeAllBuckets(t *testing.T) {
 
 	go func() {
 		for {
-			v := <-networking.recv
-			r := &message{}
-			n := newNode(&NetworkNode{})
-			n.ID = v.Sender.ID
-			n.IP = v.Sender.IP
-			n.Port = v.Sender.Port
-			r.Receiver = n.NetworkNode
-			r.Sender = &NetworkNode{ID: v.Receiver.ID, IP: net.ParseIP("0.0.0.0"), Port: 3001}
-			r.Type = v.Type
-			r.IsResponse = true
-			responseData := &responseDataFindNode{}
-			responseData.Closest = []*NetworkNode{&NetworkNode{IP: net.ParseIP("0.0.0.0"), Port: 3001, ID: getZerodIDWithNthByte(k, byte(math.Pow(2, float64(i))))}}
+			query := <-networking.recv
+			if query == nil {
+				return
+			}
+
+			res := mockFindNodeResponse(query, getZerodIDWithNthByte(k, byte(math.Pow(2, float64(i)))))
+
 			i--
 			if i < 0 {
 				i = 7
@@ -57,8 +52,7 @@ func TestFindNodeAllBuckets(t *testing.T) {
 				k = 19
 			}
 
-			r.Data = responseData
-			networking.send <- r
+			networking.send <- res
 		}
 	}()
 
@@ -67,13 +61,15 @@ func TestFindNodeAllBuckets(t *testing.T) {
 	for _, v := range dht.ht.RoutingTable {
 		assert.Equal(t, 1, len(v))
 	}
+
+	networking.disconnect()
 }
 
 // Tests timing out of nodes in a bucket. DHT bootstraps networks and learns
 // about 20 subsequent nodes in the same bucket. Upon attempting to add the 21st
 // node to the now full bucket, we should recieve a ping to the very first node
 // added in order to determine if it is still alive.
-func TestNodeTimeout(t *testing.T) {
+func TestAddNodeTimeout(t *testing.T) {
 	networking := newMockNetworking()
 	id := getIDWithValues(0)
 	done := make(chan (int))
@@ -100,41 +96,34 @@ func TestNodeTimeout(t *testing.T) {
 
 	go func() {
 		for {
-			v := <-networking.recv
-			r := &message{}
-			switch v.Type {
+			query := <-networking.recv
+			if query == nil {
+				return
+			}
+			switch query.Type {
 			case messageTypeFindNode:
-				n := newNode(&NetworkNode{})
-				n.ID = v.Sender.ID
-				n.IP = v.Sender.IP
-				n.Port = v.Sender.Port
-				r.Receiver = n.NetworkNode
-				r.Sender = &NetworkNode{ID: v.Receiver.ID, IP: net.ParseIP("0.0.0.0"), Port: 3001}
-				r.Type = v.Type
-				r.IsResponse = true
-
 				id := getIDWithValues(0)
-				if nodesAdded > k {
+				if nodesAdded > k+1 {
 					close(done)
 					return
 				}
-				id[1] = byte(255 - nodesAdded)
-				nodesAdded++
 
-				if firstNode == nil {
+				if nodesAdded == 1 {
 					firstNode = id
 				}
 
-				lastNode = id
+				if nodesAdded == k {
+					lastNode = id
+				}
 
-				responseData := &responseDataFindNode{}
-				responseData.Closest = []*NetworkNode{&NetworkNode{ID: id, IP: net.ParseIP("0.0.0.0"), Port: 3001}}
+				id[1] = byte(255 - nodesAdded)
+				nodesAdded++
 
-				r.Data = responseData
-				networking.send <- r
+				res := mockFindNodeResponse(query, id)
+				networking.send <- res
 			case messageTypePing:
-				assert.Equal(t, messageTypePing, v.Type)
-				assert.Equal(t, getZerodIDWithNthByte(1, byte(255)), v.Receiver.ID)
+				assert.Equal(t, messageTypePing, query.Type)
+				assert.Equal(t, getZerodIDWithNthByte(1, byte(255)), query.Receiver.ID)
 				close(pinged)
 			}
 		}
@@ -149,4 +138,6 @@ func TestNodeTimeout(t *testing.T) {
 
 	<-done
 	<-pinged
+
+	networking.disconnect()
 }

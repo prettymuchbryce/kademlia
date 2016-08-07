@@ -192,6 +192,7 @@ func (dht *DHT) iterate(t int, target []byte, data []byte) (value []byte, closes
 	for {
 		expectedResponses := []*expectedResponse{}
 		numExpectedResponses := 0
+
 		// Next we send messages to the first (closest) alpha nodes in the
 		// shortlist and wait for a response
 
@@ -255,23 +256,20 @@ func (dht *DHT) iterate(t int, target []byte, data []byte) (value []byte, closes
 					// Sanity check the response
 					if !areNodesEqual(r.node, result.Sender) {
 						dht.networking.cancelResponse(r)
-						panic("WHOOPS")
 						return
 					}
 
 					if r.query.Type != result.Type {
 						dht.networking.cancelResponse(r)
-						panic("WHOOPS")
 						return
 					}
 
 					if !result.IsResponse {
 						dht.networking.cancelResponse(r)
-						panic("WHOOPS")
 						return
 					}
 
-					dht.ht.markNodeAsSeen(result.Sender.ID)
+					dht.addNode(newNode(result.Sender))
 					resultChan <- result
 				case <-time.After(time.Second * tMsgTimeout):
 					dht.networking.cancelResponse(r)
@@ -307,9 +305,6 @@ func (dht *DHT) iterate(t int, target []byte, data []byte) (value []byte, closes
 			switch t {
 			case iterateFindNode:
 				responseData := result.Data.(*responseDataFindNode)
-				for _, n := range responseData.Closest {
-					dht.addNode(newNode(n))
-				}
 				sl.AppendUniqueNetworkNodes(responseData.Closest)
 			case iterateFindValue:
 				responseData := result.Data.(*responseDataFindValue)
@@ -319,15 +314,9 @@ func (dht *DHT) iterate(t int, target []byte, data []byte) (value []byte, closes
 				if responseData.Value != nil {
 					return responseData.Value, nil, nil
 				}
-				for _, n := range responseData.Closest {
-					dht.addNode(newNode(n))
-				}
 				sl.AppendUniqueNetworkNodes(responseData.Closest)
 			case iterateStore:
 				responseData := result.Data.(*responseDataFindNode)
-				for _, n := range responseData.Closest {
-					dht.addNode(newNode(n))
-				}
 				sl.AppendUniqueNetworkNodes(responseData.Closest)
 			}
 		}

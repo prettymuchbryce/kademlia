@@ -284,6 +284,14 @@ func getBucketIndexFromDifferingBit(id1 []byte, id2 []byte) int {
 	return 0
 }
 
+func (ht *hashTable) totalNodes() int {
+	var total int
+	for _, v := range ht.RoutingTable {
+		total += len(v)
+	}
+	return total
+}
+
 // newID generates a new random ID
 func newID() ([]byte, error) {
 	result := make([]byte, 20)
