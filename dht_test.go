@@ -295,6 +295,8 @@ func TestNodeResponseSendError(t *testing.T) {
 	<-done
 }
 
+// Tests a bucket refresh by setting a very low TRefresh value, adding a single
+// node to a bucket, and waiting for the refresh message for the bucket
 func TestBucketRefresh(t *testing.T) {
 	networking := newMockNetworking()
 	id := getIDWithValues(0)
@@ -350,6 +352,105 @@ func TestBucketRefresh(t *testing.T) {
 	dht.Disconnect()
 
 	<-done
+}
+
+// Tets store replication by setting the TReplicate time to a very small value.
+// Stores some data, and then expects another store message in TReplicate time
+func TestStoreReplication(t *testing.T) {
+	networking := newMockNetworking()
+	id := getIDWithValues(0)
+	done := make(chan (int))
+	replicate := make(chan (int))
+
+	dht, _ := NewDHT(getInMemoryStore(), &Options{
+		ID:         id,
+		Port:       "3000",
+		IP:         "0.0.0.0",
+		TReplicate: time.Second * 2,
+		BootstrapNodes: []*NetworkNode{&NetworkNode{
+			ID:   getZerodIDWithNthByte(1, byte(255)),
+			Port: 3001,
+			IP:   net.ParseIP("0.0.0.0"),
+		},
+		},
+	})
+
+	dht.networking = networking
+	dht.CreateSocket()
+
+	go func() {
+		dht.Listen()
+	}()
+
+	stores := 0
+
+	go func() {
+		for {
+			query := <-networking.recv
+			if query == nil {
+				close(done)
+				return
+			}
+
+			switch query.Type {
+			case messageTypeFindNode:
+				res := mockFindNodeResponseEmpty(query)
+				networking.send <- res
+			case messageTypeStore:
+				stores++
+				d := query.Data.(*queryDataStore)
+				assert.Equal(t, []byte("foo"), d.Data)
+				if stores == 2 {
+					close(replicate)
+				}
+			}
+		}
+	}()
+
+	dht.Bootstrap()
+
+	dht.Store([]byte("foo"))
+
+	<-replicate
+
+	dht.Disconnect()
+
+	<-done
+}
+
+// Test Expiration by setting TExpire to a very low value. Store a value,
+// and then wait longer than TExpire. The value should no longer exist in
+// the store.
+func TestStoreExpiration(t *testing.T) {
+	id := getIDWithValues(0)
+
+	dht, _ := NewDHT(getInMemoryStore(), &Options{
+		ID:      id,
+		Port:    "3000",
+		IP:      "0.0.0.0",
+		TExpire: time.Second,
+	})
+
+	dht.CreateSocket()
+
+	go func() {
+		dht.Listen()
+	}()
+
+	k, _ := dht.Store([]byte("foo"))
+
+	v, exists, _ := dht.Get(k)
+	assert.Equal(t, true, exists)
+
+	assert.Equal(t, []byte("foo"), v)
+
+	<-time.After(time.Second * 3)
+
+	_, exists, _ = dht.Get(k)
+
+	assert.Equal(t, false, exists)
+
+	dht.Disconnect()
 }
 
 func getInMemoryStore() *MemoryStore {

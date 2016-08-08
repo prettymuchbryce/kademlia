@@ -1,7 +1,4 @@
 TODO:
-    test refresh
-    test expiration
-    test replication
     test bad/malicious messages
 
 Nice to have:

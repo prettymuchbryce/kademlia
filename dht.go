@@ -180,6 +180,8 @@ func (dht *DHT) Bootstrap() error {
 
 // Disconnect TODO
 func (dht *DHT) Disconnect() error {
+	// TODO if .CreateSocket() is called, but .Listen() is never called, we
+	// don't provide a way to close the socket
 	return dht.networking.disconnect()
 }
 
@@ -443,9 +445,8 @@ func (dht *DHT) timers() {
 			// Replication
 			keys := dht.store.GetAllKeysForReplication()
 			for _, key := range keys {
-				keyBytes := b58.Decode(key)
-				value, _ := dht.store.Retrieve(keyBytes)
-				dht.iterate(iterateStore, keyBytes, value)
+				value, _ := dht.store.Retrieve(key)
+				dht.iterate(iterateStore, key, value)
 			}
 
 			// Expiration

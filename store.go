@@ -11,7 +11,7 @@ type Store interface {
 	Retrieve(key []byte) ([]byte, bool)
 	Delete(key []byte)
 	Init()
-	GetAllKeysForReplication() []string
+	GetAllKeysForReplication() [][]byte
 	ExpireKeys()
 }
 
@@ -24,13 +24,13 @@ type MemoryStore struct {
 }
 
 // GetAllKeysForRefresh TODO
-func (ms *MemoryStore) GetAllKeysForReplication() []string {
+func (ms *MemoryStore) GetAllKeysForReplication() [][]byte {
 	ms.mutex.Lock()
 	defer ms.mutex.Unlock()
-	var keys []string
+	var keys [][]byte
 	for k := range ms.data {
 		if time.Now().After(ms.replicateMap[k]) {
-			keys = append(keys, k)
+			keys = append(keys, []byte(k))
 		}
 	}
 	return keys
