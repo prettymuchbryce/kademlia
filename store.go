@@ -7,29 +7,29 @@ import (
 
 // Store TODO
 type Store interface {
-	Store(key []byte, data []byte, expiration time.Time, publisher bool) error
+	Store(key []byte, data []byte, replication time.Time, expiration time.Time, publisher bool) error
 	Retrieve(key []byte) ([]byte, bool)
 	Delete(key []byte)
 	Init()
-	GetAllKeysForRefresh() []string
+	GetAllKeysForReplication() []string
 	ExpireKeys()
 }
 
 // MemoryStore TODO
 type MemoryStore struct {
-	mutex      *sync.Mutex
-	data       map[string][]byte
-	refreshMap map[string]time.Time
-	expireMap  map[string]time.Time
+	mutex        *sync.Mutex
+	data         map[string][]byte
+	replicateMap map[string]time.Time
+	expireMap    map[string]time.Time
 }
 
 // GetAllKeysForRefresh TODO
-func (ms *MemoryStore) GetAllKeysForRefresh() []string {
+func (ms *MemoryStore) GetAllKeysForReplication() []string {
 	ms.mutex.Lock()
 	defer ms.mutex.Unlock()
 	var keys []string
 	for k := range ms.data {
-		if time.Now().After(ms.refreshMap[k]) {
+		if time.Now().After(ms.replicateMap[k]) {
 			keys = append(keys, k)
 		}
 	}
@@ -42,7 +42,7 @@ func (ms *MemoryStore) ExpireKeys() {
 	defer ms.mutex.Unlock()
 	for k, v := range ms.expireMap {
 		if time.Now().After(v) {
-			delete(ms.refreshMap, k)
+			delete(ms.replicateMap, k)
 			delete(ms.expireMap, k)
 			delete(ms.data, k)
 		}
@@ -53,15 +53,15 @@ func (ms *MemoryStore) ExpireKeys() {
 func (ms *MemoryStore) Init() {
 	ms.data = make(map[string][]byte)
 	ms.mutex = &sync.Mutex{}
-	ms.refreshMap = make(map[string]time.Time)
+	ms.replicateMap = make(map[string]time.Time)
 	ms.expireMap = make(map[string]time.Time)
 }
 
 // Store TODO
-func (ms *MemoryStore) Store(key []byte, data []byte, expiration time.Time, publisher bool) error {
+func (ms *MemoryStore) Store(key []byte, data []byte, replication time.Time, expiration time.Time, publisher bool) error {
 	ms.mutex.Lock()
 	defer ms.mutex.Unlock()
-	ms.refreshMap[string(key)] = time.Now().Add(time.Hour * 1)
+	ms.replicateMap[string(key)] = replication
 	ms.expireMap[string(key)] = expiration
 	ms.data[string(key)] = data
 	return nil

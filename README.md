@@ -1,7 +1,4 @@
 TODO:
-    two kinds of message timeouts
-        1. Node just doesn't respond at all
-        2. Node accepts the message, but doesn't send a netmsg response
     test refresh
     test expiration
     test replication

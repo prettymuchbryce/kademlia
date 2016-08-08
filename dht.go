@@ -10,31 +10,6 @@ import (
 	b58 "github.com/jbenet/go-base58"
 )
 
-// In seconds
-const (
-	// the time after which a key/value pair expires;
-	// this is a time-to-live (TTL) from the original publication date
-	tExpire = 86410
-
-	// seconds after which an otherwise unaccessed bucket must be refreshed
-	tRefresh = 3600
-
-	// the interval between Kademlia replication events, when a node is
-	// required to publish its entire database
-	tReplicated = 3600
-
-	// the time after which the original publisher must
-	// republish a key/value pair
-	tRepublish = 86400
-
-	// the maximum time to wait for a response from a node before discarding
-	// it from the bucket
-	tPingMax = 1
-
-	// the maximum time to wait for a response to any message
-	tMsgTimeout = 2
-)
-
 // DHT TODO
 type DHT struct {
 	ht         *hashTable
@@ -50,7 +25,28 @@ type Options struct {
 	IP             string
 	Port           string
 	BootstrapNodes []*NetworkNode
-	ContactTimeout *time.Time
+
+	// the time after which a key/value pair expires;
+	// this is a time-to-live (TTL) from the original publication date
+	TExpire time.Duration
+
+	// seconds after which an otherwise unaccessed bucket must be refreshed
+	TRefresh time.Duration
+
+	// the interval between Kademlia replication events, when a node is
+	// required to publish its entire database
+	TReplicate time.Duration
+
+	// the time after which the original publisher must
+	// republish a key/value pair
+	TRepublish time.Duration // TODO
+
+	// the maximum time to wait for a response from a node before discarding
+	// it from the bucket
+	TPingMax time.Duration
+
+	// the maximum time to wait for a response to any message
+	TMsgTimeout time.Duration
 }
 
 // NewDHT TODO
@@ -64,13 +60,35 @@ func NewDHT(store Store, options *Options) (*DHT, error) {
 	dht.store = store
 	dht.ht = ht
 	dht.networking = &realNetworking{}
+
+	if options.TExpire == 0 {
+		options.TExpire = time.Second * 86410
+	}
+
+	if options.TRefresh == 0 {
+		options.TRefresh = time.Second * 3600
+	}
+
+	if options.TReplicate == 0 {
+		options.TReplicate = time.Second * 3600
+	}
+
+	if options.TRepublish == 0 {
+		options.TRepublish = time.Second * 86400
+	}
+
+	if options.TPingMax == 0 {
+		options.TPingMax = time.Second * 1
+	}
+
+	if options.TMsgTimeout == 0 {
+		options.TMsgTimeout = time.Second * 2
+	}
+
 	return dht, nil
 }
 
 func (dht *DHT) getExpirationTime(key []byte) time.Time {
-	if len(key) != 20 {
-		panic("WTF")
-	}
 	bucket := getBucketIndexFromDifferingBit(key, dht.ht.Self.ID)
 	var total int
 	for i := 0; i < bucket; i++ {
@@ -84,9 +102,9 @@ func (dht *DHT) getExpirationTime(key []byte) time.Time {
 	}
 
 	if score > k {
-		return time.Now().Add(time.Hour * 24)
+		return time.Now().Add(dht.options.TExpire)
 	} else {
-		day := time.Hour * 24
+		day := dht.options.TExpire
 		seconds := day.Nanoseconds() * int64(math.Exp(float64(k/score)))
 		dur := time.Second * time.Duration(seconds)
 		return time.Now().Add(dur)
@@ -98,7 +116,8 @@ func (dht *DHT) Store(data []byte) (string, error) {
 	sha := sha1.Sum(data)
 	key := sha[:]
 	expiration := dht.getExpirationTime(key)
-	dht.store.Store(key, data, expiration, true)
+	replication := time.Now().Add(dht.options.TReplicate)
+	dht.store.Store(key, data, replication, expiration, true)
 	_, _, err := dht.iterate(iterateStore, key[:], data)
 	if err != nil {
 		return "", err
@@ -271,7 +290,7 @@ func (dht *DHT) iterate(t int, target []byte, data []byte) (value []byte, closes
 
 					dht.addNode(newNode(result.Sender))
 					resultChan <- result
-				case <-time.After(time.Second * tMsgTimeout):
+				case <-time.After(dht.options.TMsgTimeout):
 					dht.networking.cancelResponse(r)
 				}
 			}()
@@ -291,7 +310,7 @@ func (dht *DHT) iterate(t int, target []byte, data []byte) (value []byte, closes
 					close(resultChan)
 					break Loop
 				}
-			case <-time.After(time.Second * tMsgTimeout):
+			case <-time.After(dht.options.TMsgTimeout):
 				close(resultChan)
 				break Loop
 			}
@@ -396,7 +415,7 @@ func (dht *DHT) addNode(node *node) {
 			select {
 			case <-res.ch:
 				return
-			case <-time.After(time.Second * tPingMax):
+			case <-time.After(dht.options.TPingMax):
 				bucket = bucket[1:]
 				bucket = append(bucket, node)
 			}
@@ -409,24 +428,27 @@ func (dht *DHT) addNode(node *node) {
 }
 
 func (dht *DHT) timers() {
-	t := time.NewTicker(time.Nanosecond)
+	t := time.NewTicker(time.Second)
 	for {
 		select {
 		case <-t.C:
+			// Refresh
 			for i := 0; i < b; i++ {
-				if time.Since(dht.ht.getRefreshTimeForBucket(i)) > time.Second*tRefresh {
+				if time.Since(dht.ht.getRefreshTimeForBucket(i)) > dht.options.TRefresh {
 					id := dht.ht.getRandomIDFromBucket(k)
 					dht.iterate(iterateFindNode, id, nil)
 				}
 			}
 
-			keys := dht.store.GetAllKeysForRefresh()
+			// Replication
+			keys := dht.store.GetAllKeysForReplication()
 			for _, key := range keys {
 				keyBytes := b58.Decode(key)
 				value, _ := dht.store.Retrieve(keyBytes)
 				dht.iterate(iterateStore, keyBytes, value)
 			}
 
+			// Expiration
 			dht.store.ExpireKeys()
 		case <-dht.networking.getDisconnect():
 			t.Stop()
@@ -480,7 +502,8 @@ func (dht *DHT) listen() {
 				data := msg.Data.(*queryDataStore)
 				dht.addNode(newNode(msg.Sender))
 				expiration := dht.getExpirationTime(data.Key)
-				dht.store.Store(data.Key, data.Data, expiration, false)
+				replication := time.Now().Add(dht.options.TReplicate)
+				dht.store.Store(data.Key, data.Data, replication, expiration, false)
 			case messageTypePing:
 				response := &message{IsResponse: true}
 				response.Sender = dht.ht.Self

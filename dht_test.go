@@ -223,6 +223,10 @@ func TestNetworkingSendError(t *testing.T) {
 	dht.CreateSocket()
 
 	go func() {
+		dht.Listen()
+	}()
+
+	go func() {
 		v := <-networking.recv
 		assert.Nil(t, v)
 		close(done)
@@ -262,6 +266,10 @@ func TestNodeResponseSendError(t *testing.T) {
 	queries := 0
 
 	go func() {
+		dht.Listen()
+	}()
+
+	go func() {
 		for {
 			query := <-networking.recv
 			if query == nil {
@@ -281,6 +289,63 @@ func TestNodeResponseSendError(t *testing.T) {
 	dht.Bootstrap()
 
 	assert.Equal(t, 1, dht.ht.totalNodes())
+
+	dht.Disconnect()
+
+	<-done
+}
+
+func TestBucketRefresh(t *testing.T) {
+	networking := newMockNetworking()
+	id := getIDWithValues(0)
+	done := make(chan (int))
+	refresh := make(chan (int))
+
+	dht, _ := NewDHT(getInMemoryStore(), &Options{
+		ID:       id,
+		Port:     "3000",
+		IP:       "0.0.0.0",
+		TRefresh: time.Second * 2,
+		BootstrapNodes: []*NetworkNode{&NetworkNode{
+			ID:   getZerodIDWithNthByte(1, byte(255)),
+			Port: 3001,
+			IP:   net.ParseIP("0.0.0.0"),
+		},
+		},
+	})
+
+	dht.networking = networking
+	dht.CreateSocket()
+
+	queries := 0
+
+	go func() {
+		dht.Listen()
+	}()
+
+	go func() {
+		for {
+			query := <-networking.recv
+			if query == nil {
+				close(done)
+				return
+			}
+			queries++
+
+			res := mockFindNodeResponseEmpty(query)
+			networking.send <- res
+
+			if queries == 2 {
+				close(refresh)
+			}
+		}
+	}()
+
+	dht.Bootstrap()
+
+	assert.Equal(t, 1, dht.ht.totalNodes())
+
+	<-refresh
 
 	dht.Disconnect()
 

@@ -233,9 +233,13 @@ func (ht *hashTable) getRandomIDFromBucket(bucket int) []byte {
 	defer ht.mutex.Unlock()
 	// Set the new ID to to be equal in every byte up to
 	// the byte of the first differing bit in the bucket
+
 	var byteIndex int = bucket / 8
-	id := ht.Self.ID[:byteIndex]
-	differingBitStart := bucket - byteIndex*8
+	var id []byte
+	for i := 0; i < byteIndex; i++ {
+		id = append(id, ht.Self.ID[i])
+	}
+	differingBitStart := bucket % 8
 
 	var firstByte byte
 	// check each bit from left to right in order
@@ -253,6 +257,8 @@ func (ht *hashTable) getRandomIDFromBucket(bucket int) []byte {
 			firstByte += byte(math.Pow(2, float64(7-i)))
 		}
 	}
+
+	id = append(id, firstByte)
 
 	// Randomize each remaining byte
 	for i := byteIndex + 1; i < 20; i++ {

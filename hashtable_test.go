@@ -31,6 +31,10 @@ func TestFindNodeAllBuckets(t *testing.T) {
 	dht.networking = networking
 	dht.CreateSocket()
 
+	go func() {
+		dht.Listen()
+	}()
+
 	var k = 0
 	var i = 6
 
@@ -62,7 +66,7 @@ func TestFindNodeAllBuckets(t *testing.T) {
 		assert.Equal(t, 1, len(v))
 	}
 
-	networking.disconnect()
+	dht.Disconnect()
 }
 
 // Tests timing out of nodes in a bucket. DHT bootstraps networks and learns
@@ -89,6 +93,10 @@ func TestAddNodeTimeout(t *testing.T) {
 
 	dht.networking = networking
 	dht.CreateSocket()
+
+	go func() {
+		dht.Listen()
+	}()
 
 	var nodesAdded = 1
 	var firstNode []byte
@@ -139,5 +147,31 @@ func TestAddNodeTimeout(t *testing.T) {
 	<-done
 	<-pinged
 
-	networking.disconnect()
+	dht.Disconnect()
+}
+
+func TestGetRandomIDFromBucket(t *testing.T) {
+	id := getIDWithValues(0)
+	dht, _ := NewDHT(getInMemoryStore(), &Options{
+		ID:   id,
+		Port: "3000",
+		IP:   "0.0.0.0",
+	})
+
+	dht.CreateSocket()
+
+	go func() {
+		dht.Listen()
+	}()
+
+	// Bytes should be equal up to the bucket index that the random ID was
+	// generated for, and random afterwards
+	for i := 0; i < b/8; i++ {
+		r := dht.ht.getRandomIDFromBucket(i * 8)
+		for j := 0; j < i; j++ {
+			assert.Equal(t, byte(0), r[j])
+		}
+	}
+
+	dht.Disconnect()
 }
