@@ -174,19 +174,38 @@ func (rn *realNetworking) listen() error {
 				// Wait for messages
 				msg, err := deserializeMessage(conn)
 				if err != nil {
+					// TODO should we penalize this node somehow ? Ban it ?
 					return
 				}
 
 				if !areNodesEqual(msg.Receiver, rn.self) {
 					// TODO should we penalize this node somehow ? Ban it ?
-					panic("WHOOPS")
-
 					continue
 				}
 
 				rn.mutex.Lock()
 				if rn.connected {
 					if msg.IsResponse && rn.responseMap[msg.ID] != nil {
+						if !areNodesEqual(rn.responseMap[msg.ID].node, msg.Sender) {
+							// TODO should we penalize this node somehow ? Ban it ?
+							rn.mutex.Unlock()
+							continue
+						}
+
+						if msg.Type != rn.responseMap[msg.ID].query.Type {
+							close(rn.responseMap[msg.ID].ch)
+							delete(rn.responseMap, msg.ID)
+							rn.mutex.Unlock()
+							continue
+						}
+
+						if !msg.IsResponse {
+							close(rn.responseMap[msg.ID].ch)
+							delete(rn.responseMap, msg.ID)
+							rn.mutex.Unlock()
+							continue
+						}
+
 						rn.responseMap[msg.ID].ch <- msg
 						close(rn.responseMap[msg.ID].ch)
 						delete(rn.responseMap, msg.ID)

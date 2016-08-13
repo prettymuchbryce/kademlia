@@ -274,22 +274,6 @@ func (dht *DHT) iterate(t int, target []byte, data []byte) (value []byte, closes
 			go func() {
 				select {
 				case result := <-r.ch:
-					// Sanity check the response
-					if !areNodesEqual(r.node, result.Sender) {
-						dht.networking.cancelResponse(r)
-						return
-					}
-
-					if r.query.Type != result.Type {
-						dht.networking.cancelResponse(r)
-						return
-					}
-
-					if !result.IsResponse {
-						dht.networking.cancelResponse(r)
-						return
-					}
-
 					dht.addNode(newNode(result.Sender))
 					resultChan <- result
 				case <-time.After(dht.options.TMsgTimeout):

@@ -42,6 +42,12 @@ type shortList struct {
 }
 
 func areNodesEqual(n1 *NetworkNode, n2 *NetworkNode) bool {
+	if n1 == nil || n2 == nil {
+		return false
+	}
+	if n1.ID == nil || n2.ID == nil {
+		return false
+	}
 	if bytes.Compare(n1.ID, n2.ID) != 0 {
 		return false
 	}
