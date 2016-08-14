@@ -70,6 +70,104 @@ func TestBootstrapTwoNodes(t *testing.T) {
 	<-done
 }
 
+// Creates three DHTs, bootstrap B using A, bootstrap C using B. A should know
+// about both B and C
+func TestBootstrapThreeNodes(t *testing.T) {
+	done := make(chan bool)
+
+	id1, _ := newID()
+	dht1, _ := NewDHT(getInMemoryStore(), &Options{
+		ID:   id1,
+		IP:   "127.0.0.1",
+		Port: "3000",
+	})
+
+	id2, _ := newID()
+	dht2, _ := NewDHT(getInMemoryStore(), &Options{
+		BootstrapNodes: []*NetworkNode{
+			&NetworkNode{
+				ID:   id1,
+				IP:   net.ParseIP("127.0.0.1"),
+				Port: 3000,
+			},
+		},
+		IP:   "127.0.0.1",
+		Port: "3001",
+		ID:   id2,
+	})
+
+	dht3, _ := NewDHT(getInMemoryStore(), &Options{
+		BootstrapNodes: []*NetworkNode{
+			&NetworkNode{
+				ID:   id2,
+				IP:   net.ParseIP("127.0.0.1"),
+				Port: 3001,
+			},
+		},
+		IP:   "127.0.0.1",
+		Port: "3002",
+	})
+
+	err := dht1.CreateSocket()
+	assert.NoError(t, err)
+
+	err = dht2.CreateSocket()
+	assert.NoError(t, err)
+
+	err = dht3.CreateSocket()
+	assert.NoError(t, err)
+
+	assert.Equal(t, 0, getTotalNodes(dht1.ht.RoutingTable))
+	assert.Equal(t, 0, getTotalNodes(dht2.ht.RoutingTable))
+	assert.Equal(t, 0, getTotalNodes(dht3.ht.RoutingTable))
+
+	go func() {
+		go func() {
+			err := dht2.Bootstrap()
+			assert.NoError(t, err)
+
+			time.Sleep(500 * time.Millisecond)
+
+			go func() {
+				err = dht3.Bootstrap()
+				assert.NoError(t, err)
+
+				time.Sleep(500 * time.Millisecond)
+
+				err = dht1.Disconnect()
+				assert.NoError(t, err)
+
+				time.Sleep(100 * time.Millisecond)
+
+				err = dht2.Disconnect()
+				assert.NoError(t, err)
+
+				err = dht3.Disconnect()
+				assert.NoError(t, err)
+				done <- true
+			}()
+
+			err = dht3.Listen()
+			assert.Equal(t, "closed", err.Error())
+			done <- true
+		}()
+		err := dht2.Listen()
+		assert.Equal(t, "closed", err.Error())
+		done <- true
+	}()
+
+	err = dht1.Listen()
+	assert.Equal(t, "closed", err.Error())
+
+	assert.Equal(t, 2, getTotalNodes(dht1.ht.RoutingTable))
+	assert.Equal(t, 2, getTotalNodes(dht2.ht.RoutingTable))
+	assert.Equal(t, 2, getTotalNodes(dht3.ht.RoutingTable))
+
+	<-done
+	<-done
+	<-done
+}
+
 // Create two DHTs have them connect and bootstrap, then disconnect. Repeat
 // 100 times to ensure that we can use the same IP and port without EADDRINUSE
 // errors.
@@ -455,7 +553,6 @@ func TestStoreExpiration(t *testing.T) {
 
 func getInMemoryStore() *MemoryStore {
 	memStore := &MemoryStore{}
-	memStore.Init()
 	return memStore
 }
 

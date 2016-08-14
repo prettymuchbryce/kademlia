@@ -3,6 +3,7 @@ package kademlia
 import (
 	"bytes"
 	"crypto/sha1"
+	"errors"
 	"math"
 	"sort"
 	"time"
@@ -60,6 +61,8 @@ func NewDHT(store Store, options *Options) (*DHT, error) {
 	dht.store = store
 	dht.ht = ht
 	dht.networking = &realNetworking{}
+
+	store.Init()
 
 	if options.TExpire == 0 {
 		options.TExpire = time.Second * 86410
@@ -144,6 +147,15 @@ func (dht *DHT) Get(key string) ([]byte, bool, error) {
 	return value, exists, nil
 }
 
+func (dht *DHT) NumNodes() int {
+	return dht.ht.totalNodes()
+}
+
+func (dht *DHT) GetSelfID() string {
+	str := b58.Encode(dht.ht.Self.ID)
+	return str
+}
+
 func (dht *DHT) CreateSocket() error {
 	ip := dht.options.IP
 	port := dht.options.Port
@@ -162,18 +174,65 @@ func (dht *DHT) CreateSocket() error {
 }
 
 func (dht *DHT) Listen() error {
+	if !dht.networking.isInitialized() {
+		return errors.New("socket not created")
+	}
 	go dht.listen()
 	go dht.timers()
 	return dht.networking.listen()
 }
 
 func (dht *DHT) Bootstrap() error {
+	expectedResponses := []*expectedResponse{}
 	if len(dht.options.BootstrapNodes) > 0 {
 		for _, bn := range dht.options.BootstrapNodes {
-			node := newNode(bn)
-			dht.addNode(node)
+			query := &message{}
+			query.Sender = dht.ht.Self
+			query.Receiver = bn
+			query.Type = messageTypePing
+			if bn.ID == nil {
+				res, err := dht.networking.sendMessage(query, dht.msgCounter, true)
+				dht.msgCounter++
+				if err == nil {
+					continue
+				}
+				expectedResponses = append(expectedResponses, res)
+			} else {
+				node := newNode(bn)
+				dht.addNode(node)
+			}
 		}
 	}
+
+	numExpectedResponses := len(expectedResponses)
+
+	if numExpectedResponses > 0 {
+		resultChan := make(chan (*message))
+		for _, r := range expectedResponses {
+			go func() {
+				select {
+				case result := <-r.ch:
+					dht.addNode(newNode(result.Sender))
+					resultChan <- result
+				case <-time.After(dht.options.TMsgTimeout):
+					dht.networking.cancelResponse(r)
+				}
+			}()
+		}
+
+		for {
+			select {
+			case <-resultChan:
+				numExpectedResponses--
+				if numExpectedResponses == 0 {
+					break
+				}
+			case <-time.After(dht.options.TMsgTimeout):
+				break
+			}
+		}
+	}
+
 	_, _, err := dht.iterate(iterateFindNode, dht.ht.Self.ID, nil)
 	return err
 }
@@ -197,6 +256,12 @@ func (dht *DHT) iterate(t int, target []byte, data []byte) (value []byte, closes
 	// twice.
 	var contacted = make(map[string]bool)
 
+	// According to the Kademlia white paper, after a round of FIND_NODE RPCs
+	// fails to provide a node closer than closestNode, we should send a
+	// FIND_NODE RPC to all remaining nodes in the shortlist that have not
+	// yet been contacted.
+	queryRest := false
+
 	// We keep a reference to the closestNode. If after performing a search
 	// we do not find a closer node, we stop searching.
 	if len(sl.Nodes) == 0 {
@@ -219,7 +284,7 @@ func (dht *DHT) iterate(t int, target []byte, data []byte) (value []byte, closes
 
 		for i, node := range sl.Nodes {
 			// Contact only alpha nodes
-			if i >= alpha {
+			if i >= alpha && !queryRest {
 				break
 			}
 
@@ -283,60 +348,66 @@ func (dht *DHT) iterate(t int, target []byte, data []byte) (value []byte, closes
 		}
 
 		var results []*message
-	Loop:
-		for {
-			select {
-			case result := <-resultChan:
-				if result != nil {
-					results = append(results, result)
-				} else {
-					numExpectedResponses--
-				}
-				if len(results) == numExpectedResponses {
+		if numExpectedResponses > 0 {
+		Loop:
+			for {
+				select {
+				case result := <-resultChan:
+					if result != nil {
+						results = append(results, result)
+					} else {
+						numExpectedResponses--
+					}
+					if len(results) == numExpectedResponses {
+						close(resultChan)
+						break Loop
+					}
+				case <-time.After(dht.options.TMsgTimeout):
 					close(resultChan)
 					break Loop
 				}
-			case <-time.After(dht.options.TMsgTimeout):
-				close(resultChan)
-				break Loop
 			}
-		}
 
-		for _, result := range results {
-			if result.Error != nil {
-				sl.RemoveNode(result.Receiver)
-				continue
-			}
-			switch t {
-			case iterateFindNode:
-				responseData := result.Data.(*responseDataFindNode)
-				sl.AppendUniqueNetworkNodes(responseData.Closest)
-			case iterateFindValue:
-				responseData := result.Data.(*responseDataFindValue)
-				// TODO When an iterativeFindValue succeeds, the initiator must
-				// store the key/value pair at the closest node seen which did
-				// not return the value.
-				if responseData.Value != nil {
-					return responseData.Value, nil, nil
+			for _, result := range results {
+				if result.Error != nil {
+					sl.RemoveNode(result.Receiver)
+					continue
 				}
-				sl.AppendUniqueNetworkNodes(responseData.Closest)
-			case iterateStore:
-				responseData := result.Data.(*responseDataFindNode)
-				sl.AppendUniqueNetworkNodes(responseData.Closest)
+				switch t {
+				case iterateFindNode:
+					responseData := result.Data.(*responseDataFindNode)
+					sl.AppendUniqueNetworkNodes(responseData.Closest)
+				case iterateFindValue:
+					responseData := result.Data.(*responseDataFindValue)
+					// TODO When an iterativeFindValue succeeds, the initiator must
+					// store the key/value pair at the closest node seen which did
+					// not return the value.
+					if responseData.Value != nil {
+						return responseData.Value, nil, nil
+					}
+					sl.AppendUniqueNetworkNodes(responseData.Closest)
+				case iterateStore:
+					responseData := result.Data.(*responseDataFindNode)
+					sl.AppendUniqueNetworkNodes(responseData.Closest)
+				}
 			}
 		}
 
-		if len(sl.Nodes) == 0 {
+		if !queryRest && len(sl.Nodes) == 0 {
 			return nil, nil, nil
 		}
 
 		sort.Sort(sl)
 
 		// If closestNode is unchanged then we are done
-		if bytes.Compare(sl.Nodes[0].ID, closestNode.ID) == 0 {
+		if bytes.Compare(sl.Nodes[0].ID, closestNode.ID) == 0 || queryRest {
 			// We are done
 			switch t {
 			case iterateFindNode:
+				if !queryRest {
+					queryRest = true
+					continue
+				}
 				return nil, sl.Nodes, nil
 			case iterateFindValue:
 				return nil, sl.Nodes, nil

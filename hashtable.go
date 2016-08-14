@@ -51,6 +51,8 @@ type hashTable struct {
 func newHashTable(options *Options) (*hashTable, error) {
 	ht := &hashTable{}
 
+	rand.Seed(time.Now().UnixNano())
+
 	ht.mutex = &sync.Mutex{}
 	ht.Self = &NetworkNode{}
 
@@ -162,7 +164,7 @@ func (ht *hashTable) getClosestContacts(num int, target []byte, ignoredNodes []*
 		for i := 0; i < bucketContacts; i++ {
 			ignored := false
 			for j := 0; j < len(ignoredNodes); j++ {
-				if bytes.Compare(ignoredNodes[j].ID, ignoredNodes[j].ID) == 0 {
+				if bytes.Compare(ht.RoutingTable[index][i].ID, ignoredNodes[j].ID) == 0 {
 					ignored = true
 				}
 			}
@@ -286,7 +288,7 @@ func getBucketIndexFromDifferingBit(id1 []byte, id2 []byte) int {
 	}
 
 	// the ids must be the same
-	// should never happen
+	// this should only happen during bootstrapping
 	return 0
 }
 

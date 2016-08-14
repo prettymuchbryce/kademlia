@@ -25,6 +25,7 @@ type networking interface {
 	listen() error
 	disconnect() error
 	cancelResponse(*expectedResponse)
+	isInitialized() bool
 }
 
 type realNetworking struct {
@@ -39,6 +40,7 @@ type realNetworking struct {
 	connection    *net.UDPConn
 	mutex         *sync.Mutex
 	connected     bool
+	initialized   bool
 	responseMap   map[int64]*expectedResponse
 	aliveConns    *sync.WaitGroup
 	self          *NetworkNode
@@ -63,6 +65,11 @@ func (rn *realNetworking) init(self *NetworkNode) {
 	rn.responseMap = make(map[int64]*expectedResponse)
 	rn.aliveConns = &sync.WaitGroup{}
 	rn.connected = false
+	rn.initialized = true
+}
+
+func (rn *realNetworking) isInitialized() bool {
+	return rn.initialized
 }
 
 func (rn *realNetworking) getMessage() chan (*message) {
@@ -104,7 +111,7 @@ func (rn *realNetworking) sendMessage(msg *message, id int64, expectResponse boo
 	defer rn.mutex.Unlock()
 	msg.ID = id
 
-	conn, err := rn.socket.Dial(msg.Receiver.IP.String() + ":" + strconv.Itoa(msg.Receiver.Port))
+	conn, err := utp.Dial(msg.Receiver.IP.String() + ":" + strconv.Itoa(msg.Receiver.Port))
 	if err != nil {
 		return nil, err
 	}
@@ -156,6 +163,7 @@ func (rn *realNetworking) disconnect() error {
 	close(rn.dcMessageChan)
 	err := rn.socket.CloseNow()
 	rn.connected = false
+	rn.initialized = false
 	close(rn.dcEndChan)
 	return err
 }
@@ -178,7 +186,7 @@ func (rn *realNetworking) listen() error {
 					return
 				}
 
-				if !areNodesEqual(msg.Receiver, rn.self) {
+				if !areNodesEqual(msg.Receiver, rn.self, false) {
 					// TODO should we penalize this node somehow ? Ban it ?
 					continue
 				}
@@ -186,7 +194,8 @@ func (rn *realNetworking) listen() error {
 				rn.mutex.Lock()
 				if rn.connected {
 					if msg.IsResponse && rn.responseMap[msg.ID] != nil {
-						if !areNodesEqual(rn.responseMap[msg.ID].node, msg.Sender) {
+						isPing := msg.Type == messageTypePing
+						if !areNodesEqual(rn.responseMap[msg.ID].node, msg.Sender, isPing) {
 							// TODO should we penalize this node somehow ? Ban it ?
 							rn.mutex.Unlock()
 							continue

@@ -34,6 +34,10 @@ func (net *mockNetworking) disconnect() error {
 	return nil
 }
 
+func (net *mockNetworking) isInitialized() bool {
+	return true
+}
+
 func (net *mockNetworking) createSocket(host string, port string) error {
 	return nil
 }
