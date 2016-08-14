@@ -186,7 +186,8 @@ func (rn *realNetworking) listen() error {
 					return
 				}
 
-				if !areNodesEqual(msg.Receiver, rn.self, false) {
+				isPing := msg.Type == messageTypePing
+				if !areNodesEqual(msg.Receiver, rn.self, isPing) {
 					// TODO should we penalize this node somehow ? Ban it ?
 					continue
 				}
@@ -194,7 +195,6 @@ func (rn *realNetworking) listen() error {
 				rn.mutex.Lock()
 				if rn.connected {
 					if msg.IsResponse && rn.responseMap[msg.ID] != nil {
-						isPing := msg.Type == messageTypePing
 						if !areNodesEqual(rn.responseMap[msg.ID].node, msg.Sender, isPing) {
 							// TODO should we penalize this node somehow ? Ban it ?
 							rn.mutex.Unlock()

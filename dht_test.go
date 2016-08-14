@@ -168,6 +168,67 @@ func TestBootstrapThreeNodes(t *testing.T) {
 	<-done
 }
 
+// Creates two DHTs and bootstraps using only IP:Port. Connecting node should
+// ping the first node to find its ID
+func TestBootstrapNoID(t *testing.T) {
+	done := make(chan bool)
+
+	id1, _ := newID()
+	dht1, _ := NewDHT(getInMemoryStore(), &Options{
+		ID:   id1,
+		IP:   "127.0.0.1",
+		Port: "3000",
+	})
+
+	dht2, _ := NewDHT(getInMemoryStore(), &Options{
+		BootstrapNodes: []*NetworkNode{
+			&NetworkNode{
+				IP:   net.ParseIP("127.0.0.1"),
+				Port: 3000,
+			},
+		},
+		IP:   "127.0.0.1",
+		Port: "3001",
+	})
+
+	err := dht1.CreateSocket()
+	assert.NoError(t, err)
+
+	err = dht2.CreateSocket()
+	assert.NoError(t, err)
+
+	assert.Equal(t, 0, getTotalNodes(dht1.ht.RoutingTable))
+	assert.Equal(t, 0, getTotalNodes(dht2.ht.RoutingTable))
+
+	go func() {
+		go func() {
+			err := dht2.Bootstrap()
+			assert.NoError(t, err)
+
+			time.Sleep(50 * time.Millisecond)
+
+			err = dht2.Disconnect()
+			assert.NoError(t, err)
+
+			err = dht1.Disconnect()
+			assert.NoError(t, err)
+			done <- true
+		}()
+		err := dht2.Listen()
+		assert.Equal(t, "closed", err.Error())
+		done <- true
+	}()
+
+	err = dht1.Listen()
+	assert.Equal(t, "closed", err.Error())
+
+	assert.Equal(t, 1, getTotalNodes(dht1.ht.RoutingTable))
+	assert.Equal(t, 1, getTotalNodes(dht2.ht.RoutingTable))
+
+	<-done
+	<-done
+}
+
 // Create two DHTs have them connect and bootstrap, then disconnect. Repeat
 // 100 times to ensure that we can use the same IP and port without EADDRINUSE
 // errors.

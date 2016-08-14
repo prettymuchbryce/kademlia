@@ -1,8 +1,5 @@
-TODO:
-    test bad/malicious messages
-
 Nice to have:
-    Support looking up bootstrap node IP/Port without ID
+    More testing around networking.go
     loose parallelism for iterative lookups
     break store into two messages and transfer bulk of data over TCP
 

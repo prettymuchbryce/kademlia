@@ -193,7 +193,7 @@ func (dht *DHT) Bootstrap() error {
 			if bn.ID == nil {
 				res, err := dht.networking.sendMessage(query, dht.msgCounter, true)
 				dht.msgCounter++
-				if err == nil {
+				if err != nil {
 					continue
 				}
 				expectedResponses = append(expectedResponses, res)
@@ -220,12 +220,13 @@ func (dht *DHT) Bootstrap() error {
 			}()
 		}
 
+	Loop:
 		for {
 			select {
 			case <-resultChan:
 				numExpectedResponses--
 				if numExpectedResponses == 0 {
-					break
+					break Loop
 				}
 			case <-time.After(dht.options.TMsgTimeout):
 				break
