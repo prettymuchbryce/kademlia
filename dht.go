@@ -142,6 +142,11 @@ func (dht *DHT) Store(data []byte) (id string, err error) {
 func (dht *DHT) Get(key string) (data []byte, found bool, err error) {
 	keyBytes := b58.Decode(key)
 	value, exists := dht.store.Retrieve(keyBytes)
+
+	if len(keyBytes) != k {
+		return nil, false, errors.New("Invalid key")
+	}
+
 	if !exists {
 		var err error
 		value, _, err = dht.iterate(iterateFindValue, keyBytes, nil)
