@@ -61,13 +61,12 @@ func newHashTable(options *Options) (*hashTable, error) {
 	} else {
 		id, err := newID()
 		if err != nil {
-			panic(err)
+			return nil, err
 		}
 		ht.Self.ID = id
 	}
 
 	if options.IP == "" || options.Port == "" {
-		// TODO don't panic, bubble up.
 		return nil, errors.New("Port and IP required")
 	}
 

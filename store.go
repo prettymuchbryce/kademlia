@@ -6,18 +6,36 @@ import (
 	"time"
 )
 
-// Store TODO
+// Store is the interface for implementing the storage mechanism for the
+// DHT.
 type Store interface {
+	// Store should store a key/value pair on the network with the given
+	// replication and expiration times.
 	Store(key []byte, data []byte, replication time.Time, expiration time.Time, publisher bool) error
-	Retrieve(key []byte) ([]byte, bool)
+
+	// Retrieve searches the network a given key/value, or returns the
+	// local key/value if it exists. If it is not found locally, or on
+	// the network, the found return value will be false.
+	Retrieve(key []byte) (data []byte, found bool)
+
+	// Delete will delete a key/value pair from the Store
 	Delete(key []byte)
+
+	// Init initializes the Store
 	Init()
+
+	// GetAllKeysForReplication should return the keys of all data to be
+	// replicated across the network. Typically all data should be
+	// replicated every tReplicate seconds.
 	GetAllKeysForReplication() [][]byte
+
+	// ExpireKeys should expire all key/values due for expiration.
 	ExpireKeys()
+
+	// GetKey returns the key for data
 	GetKey(data []byte) []byte
 }
 
-// MemoryStore TODO
 type MemoryStore struct {
 	mutex        *sync.Mutex
 	data         map[string][]byte
@@ -25,7 +43,6 @@ type MemoryStore struct {
 	expireMap    map[string]time.Time
 }
 
-// GetAllKeysForRefresh TODO
 func (ms *MemoryStore) GetAllKeysForReplication() [][]byte {
 	ms.mutex.Lock()
 	defer ms.mutex.Unlock()
@@ -38,7 +55,6 @@ func (ms *MemoryStore) GetAllKeysForReplication() [][]byte {
 	return keys
 }
 
-// ExpireKeys TODO
 func (ms *MemoryStore) ExpireKeys() {
 	ms.mutex.Lock()
 	defer ms.mutex.Unlock()
@@ -51,7 +67,6 @@ func (ms *MemoryStore) ExpireKeys() {
 	}
 }
 
-// Init TODO
 func (ms *MemoryStore) Init() {
 	ms.data = make(map[string][]byte)
 	ms.mutex = &sync.Mutex{}
@@ -64,7 +79,6 @@ func (ms *MemoryStore) GetKey(data []byte) []byte {
 	return sha[:]
 }
 
-// Store TODO
 func (ms *MemoryStore) Store(key []byte, data []byte, replication time.Time, expiration time.Time, publisher bool) error {
 	ms.mutex.Lock()
 	defer ms.mutex.Unlock()
@@ -74,17 +88,17 @@ func (ms *MemoryStore) Store(key []byte, data []byte, replication time.Time, exp
 	return nil
 }
 
-// Retrieve TODO
-func (ms *MemoryStore) Retrieve(key []byte) ([]byte, bool) {
+func (ms *MemoryStore) Retrieve(key []byte) (data []byte, found bool) {
 	ms.mutex.Lock()
 	defer ms.mutex.Unlock()
-	data, exists := ms.data[string(key)]
-	return data, exists
+	data, found = ms.data[string(key)]
+	return data, found
 }
 
-// Delete TODO
 func (ms *MemoryStore) Delete(key []byte) {
 	ms.mutex.Lock()
 	defer ms.mutex.Unlock()
+	delete(ms.replicateMap, string(key))
+	delete(ms.expireMap, string(key))
 	delete(ms.data, string(key))
 }

@@ -14,7 +14,6 @@ var (
 	errorValueNotFound = errors.New("Value not found")
 )
 
-// Network TODO
 type networking interface {
 	sendMessage(*message, bool, int64) (*expectedResponse, error)
 	getMessage() chan (*message)
@@ -96,7 +95,7 @@ func (rn *realNetworking) createSocket(host string, port string) error {
 	if rn.connected {
 		return errors.New("already connected")
 	}
-	socket, err := utp.NewSocket("udp", host+":"+port)
+	socket, err := utp.NewSocket("udp", "["+host+"]"+":"+port)
 	if err != nil {
 		return err
 	}
@@ -117,7 +116,7 @@ func (rn *realNetworking) sendMessage(msg *message, expectResponse bool, id int6
 	msg.ID = id
 	rn.mutex.Unlock()
 
-	conn, err := utp.DialTimeout(msg.Receiver.IP.String()+":"+strconv.Itoa(msg.Receiver.Port), time.Second)
+	conn, err := utp.DialTimeout("["+msg.Receiver.IP.String()+"]:"+strconv.Itoa(msg.Receiver.Port), time.Second)
 	if err != nil {
 		return nil, err
 	}

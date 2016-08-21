@@ -11,7 +11,7 @@ import (
 	b58 "github.com/jbenet/go-base58"
 )
 
-// DHT TODO
+// DHT represents the state of the local node in the distributed hash table
 type DHT struct {
 	ht         *hashTable
 	options    *Options
@@ -19,37 +19,46 @@ type DHT struct {
 	store      Store
 }
 
-// Options TODO
+// Options contains configuration options for the local node
 type Options struct {
-	ID             []byte
-	IP             string
-	Port           string
+	ID []byte
+
+	// The local IPv4 or IPv6 address
+	IP string
+
+	// The local port to listen for connections on
+	Port string
+
+	// The nodes being used to bootstrap the network. Without a bootstrap
+	// node there is no way to connect to the network. NetworkNodes can be
+	// initialized via dht.NewNetworkNode()
 	BootstrapNodes []*NetworkNode
 
-	// the time after which a key/value pair expires;
+	// The time after which a key/value pair expires;
 	// this is a time-to-live (TTL) from the original publication date
 	TExpire time.Duration
 
-	// seconds after which an otherwise unaccessed bucket must be refreshed
+	// Seconds after which an otherwise unaccessed bucket must be refreshed
 	TRefresh time.Duration
 
-	// the interval between Kademlia replication events, when a node is
+	// The interval between Kademlia replication events, when a node is
 	// required to publish its entire database
 	TReplicate time.Duration
 
-	// the time after which the original publisher must
-	// republish a key/value pair
-	TRepublish time.Duration // TODO
+	// The time after which the original publisher must
+	// republish a key/value pair. Currently not implemented.
+	TRepublish time.Duration
 
-	// the maximum time to wait for a response from a node before discarding
+	// The maximum time to wait for a response from a node before discarding
 	// it from the bucket
 	TPingMax time.Duration
 
-	// the maximum time to wait for a response to any message
+	// The maximum time to wait for a response to any message
 	TMsgTimeout time.Duration
 }
 
-// NewDHT TODO
+// NewDHT initializes a new DHT node. A store and options struct must be
+// provided.
 func NewDHT(store Store, options *Options) (*DHT, error) {
 	dht := &DHT{}
 	dht.options = options
@@ -113,13 +122,14 @@ func (dht *DHT) getExpirationTime(key []byte) time.Time {
 	}
 }
 
-// Store TODO
-func (dht *DHT) Store(data []byte) (string, error) {
+// Store stores data on the network. This will trigger an iterateStore message.
+// The base58 encoded identifier will be returned if the store is successful.
+func (dht *DHT) Store(data []byte) (id string, err error) {
 	key := dht.store.GetKey(data)
 	expiration := dht.getExpirationTime(key)
 	replication := time.Now().Add(dht.options.TReplicate)
 	dht.store.Store(key, data, replication, expiration, true)
-	_, _, err := dht.iterate(iterateStore, key[:], data)
+	_, _, err = dht.iterate(iterateStore, key[:], data)
 	if err != nil {
 		return "", err
 	}
@@ -127,8 +137,9 @@ func (dht *DHT) Store(data []byte) (string, error) {
 	return str, nil
 }
 
-// Get TODO
-func (dht *DHT) Get(key string) ([]byte, bool, error) {
+// Get retrieves data from the networking using key. Key is the base58 encoded
+// identifier of the data.
+func (dht *DHT) Get(key string) (data []byte, found bool, err error) {
 	keyBytes := b58.Decode(key)
 	value, exists := dht.store.Retrieve(keyBytes)
 	if !exists {
@@ -145,15 +156,18 @@ func (dht *DHT) Get(key string) ([]byte, bool, error) {
 	return value, exists, nil
 }
 
+// NumNodes returns the total number of nodes stored in the local routing table
 func (dht *DHT) NumNodes() int {
 	return dht.ht.totalNodes()
 }
 
+// GetSelfID returns the base58 encoded identifier of the local node
 func (dht *DHT) GetSelfID() string {
 	str := b58.Encode(dht.ht.Self.ID)
 	return str
 }
 
+// CreateSocket attempts to open a UDP socket on the port provided to options
 func (dht *DHT) CreateSocket() error {
 	ip := dht.options.IP
 	port := dht.options.Port
@@ -171,6 +185,7 @@ func (dht *DHT) CreateSocket() error {
 	return dht.networking.createSocket(ip, port)
 }
 
+// Listen begins listening on the socket for incoming messages
 func (dht *DHT) Listen() error {
 	if !dht.networking.isInitialized() {
 		return errors.New("socket not created")
@@ -180,6 +195,9 @@ func (dht *DHT) Listen() error {
 	return dht.networking.listen()
 }
 
+// Bootstrap attempts to bootstrap the network using the BootstrapNodes provided
+// to the Options struct. This will trigger an iterativeFindNode to the provided
+// BootstrapNodes.
 func (dht *DHT) Bootstrap() error {
 	if len(dht.options.BootstrapNodes) == 0 {
 		return nil
@@ -234,7 +252,8 @@ func (dht *DHT) Bootstrap() error {
 	}
 }
 
-// Disconnect TODO
+// Disconnect will trigger a disconnect from the network. All underlying sockets
+// will be closed.
 func (dht *DHT) Disconnect() error {
 	// TODO if .CreateSocket() is called, but .Listen() is never called, we
 	// don't provide a way to close the socket
