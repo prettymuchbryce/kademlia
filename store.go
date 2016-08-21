@@ -9,16 +9,14 @@ import (
 // Store is the interface for implementing the storage mechanism for the
 // DHT.
 type Store interface {
-	// Store should store a key/value pair on the network with the given
-	// replication and expiration times.
+	// Store should store a key/value pair for the local node with the
+	// given replication and expiration times.
 	Store(key []byte, data []byte, replication time.Time, expiration time.Time, publisher bool) error
 
-	// Retrieve searches the network a given key/value, or returns the
-	// local key/value if it exists. If it is not found locally, or on
-	// the network, the found return value will be false.
+	// Retrieve should return the local key/value if it exists.
 	Retrieve(key []byte) (data []byte, found bool)
 
-	// Delete will delete a key/value pair from the Store
+	// Delete should delete a key/value pair from the Store
 	Delete(key []byte)
 
 	// Init initializes the Store
