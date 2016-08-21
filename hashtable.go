@@ -37,7 +37,7 @@ type hashTable struct {
 	Self *NetworkNode
 
 	// Routing table a list of all known nodes in the network
-	// Buckets are sorted by least recently seen e.g.
+	// Nodes within buckets are sorted by least recently seen e.g.
 	// [ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ]
 	//  ^                                                           ^
 	//  └ Least recently seen                    Most recently seen ┘
