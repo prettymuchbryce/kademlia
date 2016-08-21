@@ -1,6 +1,7 @@
 package kademlia
 
 import (
+	"crypto/sha1"
 	"sync"
 	"time"
 )
@@ -13,6 +14,7 @@ type Store interface {
 	Init()
 	GetAllKeysForReplication() [][]byte
 	ExpireKeys()
+	GetKey(data []byte) []byte
 }
 
 // MemoryStore TODO
@@ -55,6 +57,11 @@ func (ms *MemoryStore) Init() {
 	ms.mutex = &sync.Mutex{}
 	ms.replicateMap = make(map[string]time.Time)
 	ms.expireMap = make(map[string]time.Time)
+}
+
+func (ms *MemoryStore) GetKey(data []byte) []byte {
+	sha := sha1.Sum(data)
+	return sha[:]
 }
 
 // Store TODO

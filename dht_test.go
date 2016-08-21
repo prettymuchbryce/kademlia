@@ -1,6 +1,7 @@
 package kademlia
 
 import (
+	"bytes"
 	"net"
 	"strconv"
 	"testing"
@@ -337,9 +338,10 @@ func TestReconnect(t *testing.T) {
 	}
 }
 
-// Create two DHTs and have them connect. Send a store message from one node
-// to another. Ensure that the other node now has this data in its store.
-func TestStoreAndFindValue(t *testing.T) {
+// Create two DHTs and have them connect. Send a store message with 100mb
+// payload from one node to another. Ensure that the other node now has
+// this data in its store.
+func TestStoreAndFindLargeValue(t *testing.T) {
 	done := make(chan bool)
 
 	id1, _ := newID()
@@ -383,7 +385,9 @@ func TestStoreAndFindValue(t *testing.T) {
 
 	dht2.Bootstrap()
 
-	key, err := dht1.Store([]byte("Foo"))
+	payload := [1000000]byte{}
+
+	key, err := dht1.Store(payload[:])
 	assert.NoError(t, err)
 
 	time.Sleep(1 * time.Second)
@@ -391,7 +395,7 @@ func TestStoreAndFindValue(t *testing.T) {
 	value, exists, err := dht2.Get(key)
 	assert.NoError(t, err)
 	assert.Equal(t, true, exists)
-	assert.Equal(t, []byte("Foo"), value)
+	assert.Equal(t, 0, bytes.Compare(payload[:], value))
 
 	err = dht1.Disconnect()
 	assert.NoError(t, err)

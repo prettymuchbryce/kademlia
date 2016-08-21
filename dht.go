@@ -2,7 +2,6 @@ package kademlia
 
 import (
 	"bytes"
-	"crypto/sha1"
 	"errors"
 	"math"
 	"sort"
@@ -116,8 +115,7 @@ func (dht *DHT) getExpirationTime(key []byte) time.Time {
 
 // Store TODO
 func (dht *DHT) Store(data []byte) (string, error) {
-	sha := sha1.Sum(data)
-	key := sha[:]
+	key := dht.store.GetKey(data)
 	expiration := dht.getExpirationTime(key)
 	replication := time.Now().Add(dht.options.TReplicate)
 	dht.store.Store(key, data, replication, expiration, true)
@@ -429,7 +427,6 @@ func (dht *DHT) iterate(t int, target []byte, data []byte) (value []byte, closes
 					query.Type = messageTypeStore
 					queryData := &queryDataStore{}
 					queryData.Data = data
-					queryData.Key = target
 					query.Data = queryData
 					dht.networking.sendMessage(query, false, -1)
 				}
@@ -561,9 +558,10 @@ func (dht *DHT) listen() {
 			case messageTypeStore:
 				data := msg.Data.(*queryDataStore)
 				dht.addNode(newNode(msg.Sender))
-				expiration := dht.getExpirationTime(data.Key)
+				key := dht.store.GetKey(data.Data)
+				expiration := dht.getExpirationTime(key)
 				replication := time.Now().Add(dht.options.TReplicate)
-				dht.store.Store(data.Key, data.Data, replication, expiration, false)
+				dht.store.Store(key, data.Data, replication, expiration, false)
 			case messageTypePing:
 				response := &message{IsResponse: true}
 				response.Sender = dht.ht.Self

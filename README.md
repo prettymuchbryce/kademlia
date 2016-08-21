@@ -1,7 +1,13 @@
+TODO:
+    More testing around networking.go message validation
+    More testing of bad/malicious message handling
+
 Nice to have:
-    More testing around networking.go
     loose parallelism for iterative lookups
     break store into two messages and transfer bulk of data over TCP
+
+
+
 
 http://xlattice.sourceforge.net/components/protocol/kademlia/specs.html#FIND_VALUE
 
