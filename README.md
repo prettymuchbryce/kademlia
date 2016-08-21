@@ -8,7 +8,7 @@ This is a Go implementation of a vanilla Kademlia DHT. The implementation is bas
 
 _This project has not been heavily battle-tested, and I would not recommend using it in any sort of production environment at this time._
 
-Some things that could improve in this project:
+Some things that could improve this project:
 - [ ] Load testing / Benchmarks
 - [ ] More testing around message validation
 - [ ] More testing of bad/malicious message handling
