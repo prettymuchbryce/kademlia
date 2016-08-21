@@ -3,7 +3,7 @@
 
 This is a Go implementation of a vanilla [Kademlia](https://en.wikipedia.org/wiki/Kademlia) DHT. The implementation is based off a combination of the original [Kademlia whitepaper](https://pdos.csail.mit.edu/~petar/papers/maymounkov-kademlia-lncs.pdf) and the [xlattice design specification](http://xlattice.sourceforge.net/components/protocol/kademlia/specs.html). It does not attempt to conform to BEP-5, or any other bitorrent-specific design.
 
-_This project has not been heavily battle-tested, and I would not recommend using it in any sort of production environment at this time._
+_This project has not been heavily battle-tested, and I would not recommend using it in any production environment at this time._
 
 ## Implementation characteristics
 -  uses uTP for all network communication
