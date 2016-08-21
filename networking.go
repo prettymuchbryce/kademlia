@@ -5,6 +5,7 @@ import (
 	"net"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/anacrolix/utp"
 )
@@ -15,7 +16,7 @@ var (
 
 // Network TODO
 type networking interface {
-	sendMessage(*message, int64, bool) (*expectedResponse, error)
+	sendMessage(*message, bool, int64) (*expectedResponse, error)
 	getMessage() chan (*message)
 	messagesFin()
 	timersFin()
@@ -44,6 +45,7 @@ type realNetworking struct {
 	responseMap   map[int64]*expectedResponse
 	aliveConns    *sync.WaitGroup
 	self          *NetworkNode
+	msgCounter    int64
 }
 
 type expectedResponse struct {
@@ -106,12 +108,16 @@ func (rn *realNetworking) createSocket(host string, port string) error {
 	return nil
 }
 
-func (rn *realNetworking) sendMessage(msg *message, id int64, expectResponse bool) (*expectedResponse, error) {
+func (rn *realNetworking) sendMessage(msg *message, expectResponse bool, id int64) (*expectedResponse, error) {
 	rn.mutex.Lock()
-	defer rn.mutex.Unlock()
+	if id == -1 {
+		id = rn.msgCounter
+		rn.msgCounter++
+	}
 	msg.ID = id
+	rn.mutex.Unlock()
 
-	conn, err := utp.Dial(msg.Receiver.IP.String() + ":" + strconv.Itoa(msg.Receiver.Port))
+	conn, err := utp.DialTimeout(msg.Receiver.IP.String()+":"+strconv.Itoa(msg.Receiver.Port), time.Second)
 	if err != nil {
 		return nil, err
 	}
@@ -127,12 +133,16 @@ func (rn *realNetworking) sendMessage(msg *message, id int64, expectResponse boo
 	}
 
 	if expectResponse {
+		rn.mutex.Lock()
+		defer rn.mutex.Unlock()
 		expectedResponse := &expectedResponse{
 			ch:    make(chan (*message)),
 			node:  msg.Receiver,
 			query: msg,
 			id:    id,
 		}
+		// TODO we need a way to automatically clean these up as there are
+		// cases where they won't be removed manually
 		rn.responseMap[id] = expectedResponse
 		return expectedResponse, nil
 	}
@@ -143,8 +153,8 @@ func (rn *realNetworking) sendMessage(msg *message, id int64, expectResponse boo
 func (rn *realNetworking) cancelResponse(res *expectedResponse) {
 	rn.mutex.Lock()
 	defer rn.mutex.Unlock()
-	close(rn.responseMap[res.id].ch)
-	delete(rn.responseMap, res.id)
+	close(rn.responseMap[res.query.ID].ch)
+	delete(rn.responseMap, res.query.ID)
 }
 
 func (rn *realNetworking) disconnect() error {
@@ -171,6 +181,7 @@ func (rn *realNetworking) disconnect() error {
 func (rn *realNetworking) listen() error {
 	for {
 		conn, err := rn.socket.Accept()
+
 		if err != nil {
 			rn.disconnect()
 			<-rn.dcEndChan
@@ -182,12 +193,22 @@ func (rn *realNetworking) listen() error {
 				// Wait for messages
 				msg, err := deserializeMessage(conn)
 				if err != nil {
+					if err.Error() == "EOF" {
+						// Node went bye bye
+						return
+					} else {
+						// TODO should we penalize this node somehow ? Ban it ?
+						return
+					}
+				}
+				isPing := msg.Type == messageTypePing
+
+				if !areNodesEqual(msg.Receiver, rn.self, isPing) {
 					// TODO should we penalize this node somehow ? Ban it ?
-					return
+					continue
 				}
 
-				isPing := msg.Type == messageTypePing
-				if !areNodesEqual(msg.Receiver, rn.self, isPing) {
+				if msg.ID < 0 {
 					// TODO should we penalize this node somehow ? Ban it ?
 					continue
 				}
@@ -215,14 +236,20 @@ func (rn *realNetworking) listen() error {
 							continue
 						}
 
-						rn.responseMap[msg.ID].ch <- msg
+						resChan := rn.responseMap[msg.ID].ch
+						rn.mutex.Unlock()
+						resChan <- msg
+						rn.mutex.Lock()
 						close(rn.responseMap[msg.ID].ch)
 						delete(rn.responseMap, msg.ID)
+						rn.mutex.Unlock()
 					} else {
 						rn.recvChan <- msg
+						rn.mutex.Unlock()
 					}
+				} else {
+					rn.mutex.Unlock()
 				}
-				rn.mutex.Unlock()
 			}
 		}(conn)
 	}

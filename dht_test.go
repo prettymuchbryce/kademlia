@@ -2,11 +2,58 @@ package kademlia
 
 import (
 	"net"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 )
+
+// Creates twenty DHTs and bootstraps each with the previous
+// at the end all should know about each other
+func TestBootstrapTwentyNodes(t *testing.T) {
+	done := make(chan bool)
+	port := 3000
+	dhts := []*DHT{}
+	for i := 0; i < 20; i++ {
+		id, _ := newID()
+		dht, _ := NewDHT(getInMemoryStore(), &Options{
+			ID:   id,
+			IP:   "127.0.0.1",
+			Port: strconv.Itoa(port),
+			BootstrapNodes: []*NetworkNode{
+				NewNetworkNode("127.0.0.1", strconv.Itoa(port-1)),
+			},
+		})
+		port++
+		dhts = append(dhts, dht)
+		err := dht.CreateSocket()
+		assert.NoError(t, err)
+	}
+
+	for _, dht := range dhts {
+		assert.Equal(t, 0, dht.NumNodes())
+		go func(dht *DHT) {
+			err := dht.Listen()
+			assert.Equal(t, "closed", err.Error())
+			done <- true
+		}(dht)
+		go func(dht *DHT) {
+			err := dht.Bootstrap()
+			assert.NoError(t, err)
+		}(dht)
+		time.Sleep(time.Millisecond * 200)
+	}
+
+	time.Sleep(time.Millisecond * 2000)
+
+	for _, dht := range dhts {
+		assert.Equal(t, 19, dht.NumNodes())
+		err := dht.Disconnect()
+		assert.NoError(t, err)
+		<-done
+	}
+}
 
 // Creates two DHTs, bootstrap one using the other, ensure that they both know
 // about each other afterwards.
@@ -38,8 +85,8 @@ func TestBootstrapTwoNodes(t *testing.T) {
 	err = dht2.CreateSocket()
 	assert.NoError(t, err)
 
-	assert.Equal(t, 0, getTotalNodes(dht1.ht.RoutingTable))
-	assert.Equal(t, 0, getTotalNodes(dht2.ht.RoutingTable))
+	assert.Equal(t, 0, dht1.NumNodes())
+	assert.Equal(t, 0, dht2.NumNodes())
 
 	go func() {
 		go func() {
@@ -63,9 +110,8 @@ func TestBootstrapTwoNodes(t *testing.T) {
 	err = dht1.Listen()
 	assert.Equal(t, "closed", err.Error())
 
-	assert.Equal(t, 1, getTotalNodes(dht1.ht.RoutingTable))
-	assert.Equal(t, 1, getTotalNodes(dht2.ht.RoutingTable))
-
+	assert.Equal(t, 1, dht1.NumNodes())
+	assert.Equal(t, 1, dht2.NumNodes())
 	<-done
 	<-done
 }
@@ -117,19 +163,17 @@ func TestBootstrapThreeNodes(t *testing.T) {
 	err = dht3.CreateSocket()
 	assert.NoError(t, err)
 
-	assert.Equal(t, 0, getTotalNodes(dht1.ht.RoutingTable))
-	assert.Equal(t, 0, getTotalNodes(dht2.ht.RoutingTable))
-	assert.Equal(t, 0, getTotalNodes(dht3.ht.RoutingTable))
+	assert.Equal(t, 0, dht1.NumNodes())
+	assert.Equal(t, 0, dht2.NumNodes())
+	assert.Equal(t, 0, dht3.NumNodes())
 
-	go func() {
-		go func() {
+	go func(dht1 *DHT, dht2 *DHT, dht3 *DHT) {
+		go func(dht1 *DHT, dht2 *DHT, dht3 *DHT) {
 			err := dht2.Bootstrap()
 			assert.NoError(t, err)
 
-			time.Sleep(500 * time.Millisecond)
-
-			go func() {
-				err = dht3.Bootstrap()
+			go func(dht1 *DHT, dht2 *DHT, dht3 *DHT) {
+				err := dht3.Bootstrap()
 				assert.NoError(t, err)
 
 				time.Sleep(500 * time.Millisecond)
@@ -145,23 +189,23 @@ func TestBootstrapThreeNodes(t *testing.T) {
 				err = dht3.Disconnect()
 				assert.NoError(t, err)
 				done <- true
-			}()
+			}(dht1, dht2, dht3)
 
 			err = dht3.Listen()
 			assert.Equal(t, "closed", err.Error())
 			done <- true
-		}()
+		}(dht1, dht2, dht3)
 		err := dht2.Listen()
 		assert.Equal(t, "closed", err.Error())
 		done <- true
-	}()
+	}(dht1, dht2, dht3)
 
 	err = dht1.Listen()
 	assert.Equal(t, "closed", err.Error())
 
-	assert.Equal(t, 2, getTotalNodes(dht1.ht.RoutingTable))
-	assert.Equal(t, 2, getTotalNodes(dht2.ht.RoutingTable))
-	assert.Equal(t, 2, getTotalNodes(dht3.ht.RoutingTable))
+	assert.Equal(t, 2, dht1.NumNodes())
+	assert.Equal(t, 2, dht2.NumNodes())
+	assert.Equal(t, 2, dht3.NumNodes())
 
 	<-done
 	<-done
@@ -197,8 +241,8 @@ func TestBootstrapNoID(t *testing.T) {
 	err = dht2.CreateSocket()
 	assert.NoError(t, err)
 
-	assert.Equal(t, 0, getTotalNodes(dht1.ht.RoutingTable))
-	assert.Equal(t, 0, getTotalNodes(dht2.ht.RoutingTable))
+	assert.Equal(t, 0, dht1.NumNodes())
+	assert.Equal(t, 0, dht2.NumNodes())
 
 	go func() {
 		go func() {
@@ -222,8 +266,8 @@ func TestBootstrapNoID(t *testing.T) {
 	err = dht1.Listen()
 	assert.Equal(t, "closed", err.Error())
 
-	assert.Equal(t, 1, getTotalNodes(dht1.ht.RoutingTable))
-	assert.Equal(t, 1, getTotalNodes(dht2.ht.RoutingTable))
+	assert.Equal(t, 1, dht1.NumNodes())
+	assert.Equal(t, 1, dht2.NumNodes())
 
 	<-done
 	<-done
@@ -261,7 +305,7 @@ func TestReconnect(t *testing.T) {
 		err = dht2.CreateSocket()
 		assert.NoError(t, err)
 
-		assert.Equal(t, 0, getTotalNodes(dht1.ht.RoutingTable))
+		assert.Equal(t, 0, dht1.NumNodes())
 
 		go func() {
 			go func() {
@@ -285,8 +329,8 @@ func TestReconnect(t *testing.T) {
 		err = dht1.Listen()
 		assert.Equal(t, "closed", err.Error())
 
-		assert.Equal(t, 1, getTotalNodes(dht1.ht.RoutingTable))
-		assert.Equal(t, 1, getTotalNodes(dht2.ht.RoutingTable))
+		assert.Equal(t, 1, dht1.NumNodes())
+		assert.Equal(t, 1, dht2.NumNodes())
 
 		<-done
 		<-done
@@ -615,12 +659,4 @@ func TestStoreExpiration(t *testing.T) {
 func getInMemoryStore() *MemoryStore {
 	memStore := &MemoryStore{}
 	return memStore
-}
-
-func getTotalNodes(n [][]*node) int {
-	j := 0
-	for i := 0; i < len(n); i++ {
-		j += len(n[i])
-	}
-	return j
 }

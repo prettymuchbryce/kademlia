@@ -13,6 +13,7 @@ type mockNetworking struct {
 	dcMessageChan chan (int)
 	msgChan       chan (*message)
 	failNext      bool
+	msgCounter    int64
 }
 
 func newMockNetworking() *mockNetworking {
@@ -74,7 +75,11 @@ func (net *mockNetworking) failNextSendMessage() {
 	net.failNext = true
 }
 
-func (net *mockNetworking) sendMessage(q *message, id int64, expectResponse bool) (*expectedResponse, error) {
+func (net *mockNetworking) sendMessage(q *message, expectResponse bool, id int64) (*expectedResponse, error) {
+	if id == 0 {
+		id = net.msgCounter
+		net.msgCounter++
+	}
 	if net.failNext {
 		net.failNext = false
 		return nil, errors.New("MockNetworking Error")

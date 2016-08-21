@@ -293,6 +293,8 @@ func getBucketIndexFromDifferingBit(id1 []byte, id2 []byte) int {
 }
 
 func (ht *hashTable) totalNodes() int {
+	ht.mutex.Lock()
+	defer ht.mutex.Unlock()
 	var total int
 	for _, v := range ht.RoutingTable {
 		total += len(v)

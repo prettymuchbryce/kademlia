@@ -6,6 +6,7 @@ import (
 	"errors"
 	"math"
 	"sort"
+	"sync"
 	"time"
 
 	b58 "github.com/jbenet/go-base58"
@@ -17,7 +18,6 @@ type DHT struct {
 	options    *Options
 	networking networking
 	store      Store
-	msgCounter int64
 }
 
 // Options TODO
@@ -183,59 +183,57 @@ func (dht *DHT) Listen() error {
 }
 
 func (dht *DHT) Bootstrap() error {
+	if len(dht.options.BootstrapNodes) == 0 {
+		return nil
+	}
 	expectedResponses := []*expectedResponse{}
-	if len(dht.options.BootstrapNodes) > 0 {
-		for _, bn := range dht.options.BootstrapNodes {
-			query := &message{}
-			query.Sender = dht.ht.Self
-			query.Receiver = bn
-			query.Type = messageTypePing
-			if bn.ID == nil {
-				res, err := dht.networking.sendMessage(query, dht.msgCounter, true)
-				dht.msgCounter++
-				if err != nil {
-					continue
-				}
-				expectedResponses = append(expectedResponses, res)
-			} else {
-				node := newNode(bn)
-				dht.addNode(node)
+	wg := &sync.WaitGroup{}
+
+	for _, bn := range dht.options.BootstrapNodes {
+		query := &message{}
+		query.Sender = dht.ht.Self
+		query.Receiver = bn
+		query.Type = messageTypePing
+		if bn.ID == nil {
+			res, err := dht.networking.sendMessage(query, true, -1)
+			if err != nil {
+				continue
 			}
+			wg.Add(1)
+			expectedResponses = append(expectedResponses, res)
+		} else {
+			node := newNode(bn)
+			dht.addNode(node)
 		}
 	}
 
 	numExpectedResponses := len(expectedResponses)
 
 	if numExpectedResponses > 0 {
-		resultChan := make(chan (*message))
 		for _, r := range expectedResponses {
-			go func() {
+			go func(r *expectedResponse) {
 				select {
 				case result := <-r.ch:
 					dht.addNode(newNode(result.Sender))
-					resultChan <- result
+					wg.Done()
+					return
 				case <-time.After(dht.options.TMsgTimeout):
 					dht.networking.cancelResponse(r)
+					wg.Done()
+					return
 				}
-			}()
-		}
-
-	Loop:
-		for {
-			select {
-			case <-resultChan:
-				numExpectedResponses--
-				if numExpectedResponses == 0 {
-					break Loop
-				}
-			case <-time.After(dht.options.TMsgTimeout):
-				break
-			}
+			}(r)
 		}
 	}
 
-	_, _, err := dht.iterate(iterateFindNode, dht.ht.Self.ID, nil)
-	return err
+	wg.Wait()
+
+	if dht.NumNodes() > 0 {
+		_, _, err := dht.iterate(iterateFindNode, dht.ht.Self.ID, nil)
+		return err
+	} else {
+		return nil
+	}
 }
 
 // Disconnect TODO
@@ -275,6 +273,8 @@ func (dht *DHT) iterate(t int, target []byte, data []byte) (value []byte, closes
 		bucket := getBucketIndexFromDifferingBit(target, dht.ht.Self.ID)
 		dht.ht.resetRefreshTimeForBucket(bucket)
 	}
+
+	removeFromShortlist := []*NetworkNode{}
 
 	for {
 		expectedResponses := []*expectedResponse{}
@@ -320,32 +320,37 @@ func (dht *DHT) iterate(t int, target []byte, data []byte) (value []byte, closes
 			}
 
 			// Send the async queries and wait for a response
-			res, err := dht.networking.sendMessage(query, dht.msgCounter, true)
-			dht.msgCounter++
+			res, err := dht.networking.sendMessage(query, true, -1)
 			if err != nil {
-				// Node was unreachable for some reason. We will remove it from
-				// the shortlist, but keep it around in hopes that it might
-				// come back online in the future.
-				sl.RemoveNode(query.Receiver)
+				// Node was unreachable for some reason. We will have to remove
+				// it from the shortlist, but we will keep it in our routing
+				// table in hopes that it might come back online in the future.
+				removeFromShortlist = append(removeFromShortlist, query.Receiver)
 				continue
 			}
 
 			expectedResponses = append(expectedResponses, res)
 		}
 
+		for _, n := range removeFromShortlist {
+			sl.RemoveNode(n)
+		}
+
 		numExpectedResponses = len(expectedResponses)
 
 		resultChan := make(chan (*message))
 		for _, r := range expectedResponses {
-			go func() {
+			go func(r *expectedResponse) {
 				select {
 				case result := <-r.ch:
 					dht.addNode(newNode(result.Sender))
 					resultChan <- result
+					return
 				case <-time.After(dht.options.TMsgTimeout):
 					dht.networking.cancelResponse(r)
+					return
 				}
-			}()
+			}(r)
 		}
 
 		var results []*message
@@ -426,8 +431,7 @@ func (dht *DHT) iterate(t int, target []byte, data []byte) (value []byte, closes
 					queryData.Data = data
 					queryData.Key = target
 					query.Data = queryData
-					dht.networking.sendMessage(query, dht.msgCounter, false)
-					dht.msgCounter++
+					dht.networking.sendMessage(query, false, -1)
 				}
 				return nil, nil, nil
 			}
@@ -464,8 +468,7 @@ func (dht *DHT) addNode(node *node) {
 		query.Receiver = n
 		query.Sender = dht.ht.Self
 		query.Type = messageTypePing
-		res, err := dht.networking.sendMessage(query, dht.msgCounter, true)
-		dht.msgCounter++
+		res, err := dht.networking.sendMessage(query, true, -1)
 		if err != nil {
 			bucket = append(bucket, node)
 			bucket = bucket[1:]
@@ -536,7 +539,7 @@ func (dht *DHT) listen() {
 				responseData := &responseDataFindNode{}
 				responseData.Closest = closest.Nodes
 				response.Data = responseData
-				dht.networking.sendMessage(response, msg.ID, false)
+				dht.networking.sendMessage(response, false, msg.ID)
 			case messageTypeFindValue:
 				data := msg.Data.(*queryDataFindValue)
 				dht.addNode(newNode(msg.Sender))
@@ -554,7 +557,7 @@ func (dht *DHT) listen() {
 					responseData.Closest = closest.Nodes
 				}
 				response.Data = responseData
-				dht.networking.sendMessage(response, msg.ID, false)
+				dht.networking.sendMessage(response, false, msg.ID)
 			case messageTypeStore:
 				data := msg.Data.(*queryDataStore)
 				dht.addNode(newNode(msg.Sender))
@@ -566,7 +569,7 @@ func (dht *DHT) listen() {
 				response.Sender = dht.ht.Self
 				response.Receiver = msg.Sender
 				response.Type = messageTypePing
-				dht.networking.sendMessage(response, msg.ID, false)
+				dht.networking.sendMessage(response, false, msg.ID)
 			}
 		case <-dht.networking.getDisconnect():
 			dht.networking.messagesFin()
