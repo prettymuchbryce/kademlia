@@ -3,11 +3,12 @@ package main
 import (
 	"flag"
 	"fmt"
-	"kademlia"
 	"os"
 	"os/signal"
 	"strconv"
 	"strings"
+
+	"github.com/prettymuchbryce/kademlia"
 
 	"gopkg.in/readline.v1"
 )
