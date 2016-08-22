@@ -20,7 +20,7 @@ func TestFindNodeAllBuckets(t *testing.T) {
 		ID:   id,
 		Port: "3000",
 		IP:   "0.0.0.0",
-		BootstrapNodes: []*NetworkNode{&NetworkNode{
+		BootstrapNodes: []*NetworkNode{{
 			ID:   getZerodIDWithNthByte(0, byte(math.Pow(2, 7))),
 			Port: 3001,
 			IP:   net.ParseIP("0.0.0.0"),
@@ -71,7 +71,7 @@ func TestFindNodeAllBuckets(t *testing.T) {
 
 // Tests timing out of nodes in a bucket. DHT bootstraps networks and learns
 // about 20 subsequent nodes in the same bucket. Upon attempting to add the 21st
-// node to the now full bucket, we should recieve a ping to the very first node
+// node to the now full bucket, we should receive a ping to the very first node
 // added in order to determine if it is still alive.
 func TestAddNodeTimeout(t *testing.T) {
 	networking := newMockNetworking()
@@ -83,7 +83,7 @@ func TestAddNodeTimeout(t *testing.T) {
 		ID:   id,
 		Port: "3000",
 		IP:   "0.0.0.0",
-		BootstrapNodes: []*NetworkNode{&NetworkNode{
+		BootstrapNodes: []*NetworkNode{{
 			ID:   getZerodIDWithNthByte(1, byte(255)),
 			Port: 3001,
 			IP:   net.ParseIP("0.0.0.0"),

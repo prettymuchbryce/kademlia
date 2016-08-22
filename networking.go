@@ -194,11 +194,9 @@ func (rn *realNetworking) listen() error {
 				if err != nil {
 					if err.Error() == "EOF" {
 						// Node went bye bye
-						return
-					} else {
-						// TODO should we penalize this node somehow ? Ban it ?
-						return
 					}
+					// TODO should we penalize this node somehow ? Ban it ?
+					return
 				}
 				isPing := msg.Type == messageTypePing
 

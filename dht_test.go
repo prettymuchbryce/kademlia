@@ -70,7 +70,7 @@ func TestBootstrapTwoNodes(t *testing.T) {
 
 	dht2, _ := NewDHT(getInMemoryStore(), &Options{
 		BootstrapNodes: []*NetworkNode{
-			&NetworkNode{
+			{
 				ID:   id1,
 				IP:   net.ParseIP("127.0.0.1"),
 				Port: 3000,
@@ -132,7 +132,7 @@ func TestBootstrapThreeNodes(t *testing.T) {
 	id2, _ := newID()
 	dht2, _ := NewDHT(getInMemoryStore(), &Options{
 		BootstrapNodes: []*NetworkNode{
-			&NetworkNode{
+			{
 				ID:   id1,
 				IP:   net.ParseIP("127.0.0.1"),
 				Port: 3000,
@@ -145,7 +145,7 @@ func TestBootstrapThreeNodes(t *testing.T) {
 
 	dht3, _ := NewDHT(getInMemoryStore(), &Options{
 		BootstrapNodes: []*NetworkNode{
-			&NetworkNode{
+			{
 				ID:   id2,
 				IP:   net.ParseIP("127.0.0.1"),
 				Port: 3001,
@@ -227,7 +227,7 @@ func TestBootstrapNoID(t *testing.T) {
 
 	dht2, _ := NewDHT(getInMemoryStore(), &Options{
 		BootstrapNodes: []*NetworkNode{
-			&NetworkNode{
+			{
 				IP:   net.ParseIP("127.0.0.1"),
 				Port: 3000,
 			},
@@ -290,7 +290,7 @@ func TestReconnect(t *testing.T) {
 
 		dht2, _ := NewDHT(getInMemoryStore(), &Options{
 			BootstrapNodes: []*NetworkNode{
-				&NetworkNode{
+				{
 					ID:   id1,
 					IP:   net.ParseIP("127.0.0.1"),
 					Port: 3000,
@@ -353,7 +353,7 @@ func TestStoreAndFindLargeValue(t *testing.T) {
 
 	dht2, _ := NewDHT(getInMemoryStore(), &Options{
 		BootstrapNodes: []*NetworkNode{
-			&NetworkNode{
+			{
 				ID:   id1,
 				IP:   net.ParseIP("127.0.0.1"),
 				Port: 3000,
@@ -418,7 +418,7 @@ func TestNetworkingSendError(t *testing.T) {
 		ID:   id,
 		Port: "3000",
 		IP:   "0.0.0.0",
-		BootstrapNodes: []*NetworkNode{&NetworkNode{
+		BootstrapNodes: []*NetworkNode{{
 			ID:   getZerodIDWithNthByte(1, byte(255)),
 			Port: 3001,
 			IP:   net.ParseIP("0.0.0.0"),
@@ -459,7 +459,7 @@ func TestNodeResponseSendError(t *testing.T) {
 		ID:   id,
 		Port: "3000",
 		IP:   "0.0.0.0",
-		BootstrapNodes: []*NetworkNode{&NetworkNode{
+		BootstrapNodes: []*NetworkNode{{
 			ID:   getZerodIDWithNthByte(1, byte(255)),
 			Port: 3001,
 			IP:   net.ParseIP("0.0.0.0"),
@@ -515,7 +515,7 @@ func TestBucketRefresh(t *testing.T) {
 		Port:     "3000",
 		IP:       "0.0.0.0",
 		TRefresh: time.Second * 2,
-		BootstrapNodes: []*NetworkNode{&NetworkNode{
+		BootstrapNodes: []*NetworkNode{{
 			ID:   getZerodIDWithNthByte(1, byte(255)),
 			Port: 3001,
 			IP:   net.ParseIP("0.0.0.0"),
@@ -574,7 +574,7 @@ func TestStoreReplication(t *testing.T) {
 		Port:       "3000",
 		IP:         "0.0.0.0",
 		TReplicate: time.Second * 2,
-		BootstrapNodes: []*NetworkNode{&NetworkNode{
+		BootstrapNodes: []*NetworkNode{{
 			ID:   getZerodIDWithNthByte(1, byte(255)),
 			Port: 3001,
 			IP:   net.ParseIP("0.0.0.0"),

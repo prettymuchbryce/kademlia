@@ -114,12 +114,12 @@ func (dht *DHT) getExpirationTime(key []byte) time.Time {
 
 	if score > k {
 		return time.Now().Add(dht.options.TExpire)
-	} else {
-		day := dht.options.TExpire
-		seconds := day.Nanoseconds() * int64(math.Exp(float64(k/score)))
-		dur := time.Second * time.Duration(seconds)
-		return time.Now().Add(dur)
 	}
+
+	day := dht.options.TExpire
+	seconds := day.Nanoseconds() * int64(math.Exp(float64(k/score)))
+	dur := time.Second * time.Duration(seconds)
+	return time.Now().Add(dur)
 }
 
 // Store stores data on the network. This will trigger an iterateStore message.
@@ -252,9 +252,9 @@ func (dht *DHT) Bootstrap() error {
 	if dht.NumNodes() > 0 {
 		_, _, err := dht.iterate(iterateFindNode, dht.ht.Self.ID, nil)
 		return err
-	} else {
-		return nil
 	}
+
+	return nil
 }
 
 // Disconnect will trigger a disconnect from the network. All underlying sockets

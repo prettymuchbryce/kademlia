@@ -34,6 +34,8 @@ type Store interface {
 	GetKey(data []byte) []byte
 }
 
+// MemoryStore is a simple in-memory key/value store used for unit testing, and
+// the CLI example
 type MemoryStore struct {
 	mutex        *sync.Mutex
 	data         map[string][]byte
@@ -41,6 +43,9 @@ type MemoryStore struct {
 	expireMap    map[string]time.Time
 }
 
+// GetAllKeysForReplication should return the keys of all data to be
+// replicated across the network. Typically all data should be
+// replicated every tReplicate seconds.
 func (ms *MemoryStore) GetAllKeysForReplication() [][]byte {
 	ms.mutex.Lock()
 	defer ms.mutex.Unlock()
@@ -53,6 +58,7 @@ func (ms *MemoryStore) GetAllKeysForReplication() [][]byte {
 	return keys
 }
 
+// ExpireKeys should expire all key/values due for expiration.
 func (ms *MemoryStore) ExpireKeys() {
 	ms.mutex.Lock()
 	defer ms.mutex.Unlock()
@@ -65,6 +71,7 @@ func (ms *MemoryStore) ExpireKeys() {
 	}
 }
 
+// Init initializes the Store
 func (ms *MemoryStore) Init() {
 	ms.data = make(map[string][]byte)
 	ms.mutex = &sync.Mutex{}
@@ -72,11 +79,14 @@ func (ms *MemoryStore) Init() {
 	ms.expireMap = make(map[string]time.Time)
 }
 
+// GetKey returns the key for data
 func (ms *MemoryStore) GetKey(data []byte) []byte {
 	sha := sha1.Sum(data)
 	return sha[:]
 }
 
+// Store will store a key/value pair for the local node with the given
+// replication and expiration times.
 func (ms *MemoryStore) Store(key []byte, data []byte, replication time.Time, expiration time.Time, publisher bool) error {
 	ms.mutex.Lock()
 	defer ms.mutex.Unlock()
@@ -86,6 +96,7 @@ func (ms *MemoryStore) Store(key []byte, data []byte, replication time.Time, exp
 	return nil
 }
 
+// Retrieve will return the local key/value if it exists
 func (ms *MemoryStore) Retrieve(key []byte) (data []byte, found bool) {
 	ms.mutex.Lock()
 	defer ms.mutex.Unlock()
@@ -93,6 +104,7 @@ func (ms *MemoryStore) Retrieve(key []byte) (data []byte, found bool) {
 	return data, found
 }
 
+// Delete deletes a key/value pair from the MemoryStore
 func (ms *MemoryStore) Delete(key []byte) {
 	ms.mutex.Lock()
 	defer ms.mutex.Unlock()

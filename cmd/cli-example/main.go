@@ -57,7 +57,7 @@ func main() {
 	fmt.Println("..done")
 
 	go func() {
-		fmt.Sprintln("Now listening on port %s", port)
+		fmt.Println("Now listening on port " + *port)
 		err := dht.Listen()
 		panic(err)
 	}()
@@ -71,7 +71,7 @@ func main() {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
 	go func() {
-		for _ = range c {
+		for range c {
 			err := dht.Disconnect()
 			if err != nil {
 				panic(err)

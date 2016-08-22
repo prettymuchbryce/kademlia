@@ -26,6 +26,7 @@ type node struct {
 	*NetworkNode
 }
 
+// NewNetworkNode creates a new NetworkNode for bootstrapping
 func NewNetworkNode(ip string, port string) *NetworkNode {
 	p, _ := strconv.Atoi(port)
 	return &NetworkNode{

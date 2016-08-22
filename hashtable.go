@@ -119,6 +119,7 @@ func (ht *hashTable) markNodeAsSeen(node []byte) {
 	n := bucket[nodeIndex]
 	bucket = append(bucket[:nodeIndex], bucket[nodeIndex+1:]...)
 	bucket = append(bucket, n)
+	ht.RoutingTable[index] = bucket
 }
 
 func (ht *hashTable) doesNodeExistInBucket(bucket int, node []byte) bool {
@@ -235,7 +236,7 @@ func (ht *hashTable) getRandomIDFromBucket(bucket int) []byte {
 	// Set the new ID to to be equal in every byte up to
 	// the byte of the first differing bit in the bucket
 
-	var byteIndex int = bucket / 8
+	byteIndex := bucket / 8
 	var id []byte
 	for i := 0; i < byteIndex; i++ {
 		id = append(id, ht.Self.ID[i])

@@ -87,9 +87,8 @@ func (net *mockNetworking) sendMessage(q *message, expectResponse bool, id int64
 	net.recv <- q
 	if expectResponse {
 		return &expectedResponse{ch: net.send, query: q, node: q.Receiver, id: id}, nil
-	} else {
-		return nil, nil
 	}
+	return nil, nil
 }
 
 func mockFindNodeResponse(query *message, nextID []byte) *message {
@@ -103,7 +102,7 @@ func mockFindNodeResponse(query *message, nextID []byte) *message {
 	r.Type = query.Type
 	r.IsResponse = true
 	responseData := &responseDataFindNode{}
-	responseData.Closest = []*NetworkNode{&NetworkNode{IP: net.ParseIP("0.0.0.0"), Port: 3001, ID: nextID}}
+	responseData.Closest = []*NetworkNode{{IP: net.ParseIP("0.0.0.0"), Port: 3001, ID: nextID}}
 	r.Data = responseData
 	return r
 }
