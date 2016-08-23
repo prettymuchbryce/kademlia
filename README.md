@@ -2,7 +2,7 @@
 [![GoDoc](https://godoc.org/github.com/prettymuchbryce/kademlia?status.svg)](https://godoc.org/github.com/prettymuchbryce/kademlia)
 [![Go Report Card](https://goreportcard.com/badge/github.com/prettymuchbryce/kademlia)](https://goreportcard.com/report/github.com/prettymuchbryce/kademlia)
 
-This is a Go implementation of a vanilla [Kademlia](https://en.wikipedia.org/wiki/Kademlia) DHT. The implementation is based off a combination of the original [Kademlia whitepaper](https://pdos.csail.mit.edu/~petar/papers/maymounkov-kademlia-lncs.pdf) and the [xlattice design specification](http://xlattice.sourceforge.net/components/protocol/kademlia/specs.html). It does not attempt to conform to BEP-5, or any other bitorrent-specific design.
+This is a Go implementation of a vanilla [Kademlia](https://en.wikipedia.org/wiki/Kademlia) DHT. The implementation is based off of a combination of the original [Kademlia whitepaper](https://pdos.csail.mit.edu/~petar/papers/maymounkov-kademlia-lncs.pdf) and the [xlattice design specification](http://xlattice.sourceforge.net/components/protocol/kademlia/specs.html). It does not attempt to conform to BEP-5, or any other bitorrent-specific design.
 
 _This project has not been heavily battle-tested, and I would not recommend using it in any production environment at this time._
 

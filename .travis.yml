@@ -1,0 +1,14 @@
+notifications:
+  email: false
+
+language: go
+
+script:
+  - make test
+
+os:
+  - linux
+  - osx
+
+install:
+  - make install

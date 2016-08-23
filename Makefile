@@ -20,3 +20,6 @@ test:
 dev:
 	go get github.com/skelterjohn/rerun
 	rerun $(shell go list)
+
+install:
+	go get ./...
