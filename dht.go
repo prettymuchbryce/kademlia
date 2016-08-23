@@ -235,7 +235,10 @@ func (dht *DHT) Bootstrap() error {
 			go func(r *expectedResponse) {
 				select {
 				case result := <-r.ch:
-					dht.addNode(newNode(result.Sender))
+					// If result is nil, channel was closed
+					if result != nil {
+						dht.addNode(newNode(result.Sender))
+					}
 					wg.Done()
 					return
 				case <-time.After(dht.options.TMsgTimeout):
@@ -365,6 +368,10 @@ func (dht *DHT) iterate(t int, target []byte, data []byte) (value []byte, closes
 			go func(r *expectedResponse) {
 				select {
 				case result := <-r.ch:
+					if result == nil {
+						// Channel was closed
+						return
+					}
 					dht.addNode(newNode(result.Sender))
 					resultChan <- result
 					return
