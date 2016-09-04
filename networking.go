@@ -2,12 +2,14 @@ package kademlia
 
 import (
 	"errors"
+	"fmt"
 	"net"
 	"strconv"
 	"sync"
 	"time"
 
 	"github.com/anacrolix/utp"
+	"github.com/ccding/go-stun/stun"
 )
 
 var (
@@ -95,10 +97,25 @@ func (rn *realNetworking) createSocket(host string, port string) error {
 	if rn.connected {
 		return errors.New("already connected")
 	}
+
 	socket, err := utp.NewSocket("udp", "["+host+"]"+":"+port)
 	if err != nil {
 		return err
 	}
+
+	c := stun.NewClientWithConnection(socket)
+
+	_, h, err := c.Discover()
+	if err != nil {
+		return err
+	}
+
+	_, err = c.Keepalive()
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(h.TransportAddr())
 
 	rn.connected = true
 
@@ -116,8 +133,11 @@ func (rn *realNetworking) sendMessage(msg *message, expectResponse bool, id int6
 	msg.ID = id
 	rn.mutex.Unlock()
 
-	conn, err := utp.DialTimeout("["+msg.Receiver.IP.String()+"]:"+strconv.Itoa(msg.Receiver.Port), time.Second)
+	fmt.Println("try connect", "["+msg.Receiver.IP.String()+"]:"+strconv.Itoa(msg.Receiver.Port))
+
+	conn, err := rn.socket.DialTimeout("["+msg.Receiver.IP.String()+"]:"+strconv.Itoa(msg.Receiver.Port), time.Second)
 	if err != nil {
+		fmt.Println(err)
 		return nil, err
 	}
 
@@ -181,6 +201,8 @@ func (rn *realNetworking) listen() error {
 	for {
 		conn, err := rn.socket.Accept()
 
+		fmt.Println("Got connection", conn.RemoteAddr().String(), conn.RemoteAddr().Network())
+
 		if err != nil {
 			rn.disconnect()
 			<-rn.dcEndChan
@@ -198,6 +220,7 @@ func (rn *realNetworking) listen() error {
 					// TODO should we penalize this node somehow ? Ban it ?
 					return
 				}
+
 				isPing := msg.Type == messageTypePing
 
 				if !areNodesEqual(msg.Receiver, rn.self, isPing) {

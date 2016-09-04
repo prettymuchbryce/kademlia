@@ -61,7 +61,23 @@ type Options struct {
 // provided.
 func NewDHT(store Store, options *Options) (*DHT, error) {
 	dht := &DHT{}
+
+	// c := stun.NewClient()
+	// _, h, err := stun.NewClient().Discover()
+	// if err != nil {
+	// 	return nil, err
+	// }
+
 	dht.options = options
+
+	// dht.options.IP = h.IP()
+
+	// dht.options.Port = strconv.Itoa(int(h.Port()))
+
+	// fmt.Println(dht.options.IP, dht.options.Port)
+
+	// fmt.Println("WTF", h.String(), h.TransportAddr())
+
 	ht, err := newHashTable(options)
 	if err != nil {
 		return nil, err

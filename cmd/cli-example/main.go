@@ -16,7 +16,7 @@ import (
 func main() {
 	var ip = flag.String("ip", "127.0.0.1", "IP Address to use")
 	var port = flag.String("port", "", "Port to use")
-	var bIP = flag.String("bip", "127.0.0.1", "IP Address to bootstrap against")
+	var bIP = flag.String("bip", "", "IP Address to bootstrap against")
 	var bPort = flag.String("bport", "", "Port to bootstrap against")
 	var help = flag.Bool("help", false, "Display Help")
 
