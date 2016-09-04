@@ -25,6 +25,10 @@ func (net *mockNetworking) listen() error {
 	return nil
 }
 
+func (net *mockNetworking) getNetworkAddr() string {
+	return ""
+}
+
 func (net *mockNetworking) disconnect() error {
 	close(net.dc)
 	<-net.dcTimersChan

@@ -28,6 +28,7 @@ type networking interface {
 	disconnect() error
 	cancelResponse(*expectedResponse)
 	isInitialized() bool
+	getNetworkAddr() string
 }
 
 type realNetworking struct {
@@ -47,6 +48,7 @@ type realNetworking struct {
 	aliveConns    *sync.WaitGroup
 	self          *NetworkNode
 	msgCounter    int64
+	remoteAddress string
 }
 
 type expectedResponse struct {
@@ -77,6 +79,10 @@ func (rn *realNetworking) isInitialized() bool {
 
 func (rn *realNetworking) getMessage() chan (*message) {
 	return rn.recvChan
+}
+
+func (rn *realNetworking) getNetworkAddr() string {
+	return rn.remoteAddress
 }
 
 func (rn *realNetworking) messagesFin() {
@@ -110,12 +116,7 @@ func (rn *realNetworking) createSocket(host string, port string) error {
 		return err
 	}
 
-	_, err = c.Keepalive()
-	if err != nil {
-		return err
-	}
-
-	fmt.Println(h.TransportAddr())
+	rn.remoteAddress = h.String()
 
 	rn.connected = true
 
@@ -200,7 +201,6 @@ func (rn *realNetworking) disconnect() error {
 func (rn *realNetworking) listen() error {
 	for {
 		conn, err := rn.socket.Accept()
-
 		fmt.Println("Got connection", conn.RemoteAddr().String(), conn.RemoteAddr().Network())
 
 		if err != nil {
@@ -222,6 +222,18 @@ func (rn *realNetworking) listen() error {
 				}
 
 				isPing := msg.Type == messageTypePing
+
+				host, port, err := net.SplitHostPort(conn.RemoteAddr().String())
+				if err != nil {
+					continue
+				}
+
+				msg.Sender.IP = net.ParseIP(host)
+				portInt, err := strconv.Atoi(port)
+				if err != nil {
+					continue
+				}
+				msg.Sender.Port = portInt
 
 				if !areNodesEqual(msg.Receiver, rn.self, isPing) {
 					// TODO should we penalize this node somehow ? Ban it ?

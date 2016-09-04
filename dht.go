@@ -188,6 +188,12 @@ func (dht *DHT) GetSelfID() string {
 	return str
 }
 
+// GetNetworkAddr returns the publicly accessible IP and Port of the local
+// node
+func (dht *DHT) GetNetworkAddr() string {
+	return dht.networking.getNetworkAddr()
+}
+
 // CreateSocket attempts to open a UDP socket on the port provided to options
 func (dht *DHT) CreateSocket() error {
 	ip := dht.options.IP
