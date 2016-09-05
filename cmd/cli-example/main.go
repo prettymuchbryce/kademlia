@@ -14,11 +14,12 @@ import (
 )
 
 func main() {
-	var ip = flag.String("ip", "127.0.0.1", "IP Address to use")
-	var port = flag.String("port", "", "Port to use")
+	var ip = flag.String("ip", "0.0.0.0", "IP Address to use")
+	var port = flag.String("port", "0", "Port to use")
 	var bIP = flag.String("bip", "", "IP Address to bootstrap against")
 	var bPort = flag.String("bport", "", "Port to bootstrap against")
 	var help = flag.Bool("help", false, "Display Help")
+	var stun = flag.Bool("stun", true, "Use STUN")
 
 	flag.Parse()
 
@@ -47,9 +48,15 @@ func main() {
 		BootstrapNodes: bootstrapNodes,
 		IP:             *ip,
 		Port:           *port,
+		UseStun:        *stun,
 	})
 
 	fmt.Println("Opening socket..")
+
+	if *stun {
+		fmt.Println("Discovering public address using STUN..")
+	}
+
 	err = dht.CreateSocket()
 	if err != nil {
 		panic(err)
@@ -57,7 +64,7 @@ func main() {
 	fmt.Println("..done")
 
 	go func() {
-		fmt.Println("Now listening on port " + *port)
+		fmt.Println("Now listening on " + dht.GetNetworkAddr())
 		err := dht.Listen()
 		panic(err)
 	}()
@@ -101,9 +108,9 @@ func main() {
 			}
 			id, err := dht.Store([]byte(input[1]))
 			if err != nil {
-				println(err.Error())
+				fmt.Println(err.Error())
 			}
-			println("Stored ID: " + id)
+			fmt.Println("Stored ID: " + id)
 		case "get":
 			if len(input) != 2 {
 				displayHelp()
@@ -111,41 +118,42 @@ func main() {
 			}
 			data, exists, err := dht.Get(input[1])
 			if err != nil {
-				println(err.Error())
+				fmt.Println(err.Error())
 			}
-			println("Searching for", input[1])
+			fmt.Println("Searching for", input[1])
 			if exists {
-				println("..Found data:", string(data))
+				fmt.Println("..Found data:", string(data))
 			} else {
-				println("..Nothing found for this key!")
+				fmt.Println("..Nothing found for this key!")
 			}
 		case "info":
 			nodes := dht.NumNodes()
 			self := dht.GetSelfID()
-			println("IP: " + *ip)
-			println("Port: " + *port)
-			println("ID: " + self)
-			println("Known Nodes: " + strconv.Itoa(nodes))
+			addr := dht.GetNetworkAddr()
+			fmt.Println("Addr: " + addr)
+			fmt.Println("ID: " + self)
+			fmt.Println("Known Nodes: " + strconv.Itoa(nodes))
 		}
 	}
 }
 
 func displayFlagHelp() {
-	println(`cli-example
+	fmt.Println(`cli-example
 
 Usage:
 	cli-example --port [port]
 
 Options:
 	--help Show this screen.
-	--ip=<ip> Local IP [default: 127.0.0.1]
-	--port=[port] Local Port
-	--bip=<ip> Bootstrap IP [default: 127.0.0.1]
-	--bport<port> Bootstrap Port`)
+	--ip=<ip> Local IP [default: 0.0.0.0]
+	--port=[port] Local Port [default: 0]
+	--bip=<ip> Bootstrap IP
+	--bport=<port> Bootstrap Port
+	--stun=<bool> Use STUN protocol for public addr discovery [default: true]`)
 }
 
 func displayHelp() {
-	println(`
+	fmt.Println(`
 help - This message
 store <message> - Store a message on the network
 get <key> - Get a message from the network

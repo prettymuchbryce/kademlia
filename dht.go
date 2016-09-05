@@ -29,6 +29,14 @@ type Options struct {
 	// The local port to listen for connections on
 	Port string
 
+	// Whether or not to use the STUN protocol to determine public IP and Port
+	// May be necessary if the node is behind a NAT
+	UseStun bool
+
+	// Specifies the the host of the STUN server. If left empty will use the
+	// default specified in go-stun.
+	StunAddr string
+
 	// The nodes being used to bootstrap the network. Without a bootstrap
 	// node there is no way to connect to the network. NetworkNodes can be
 	// initialized via dht.NewNetworkNode()
@@ -62,26 +70,13 @@ type Options struct {
 func NewDHT(store Store, options *Options) (*DHT, error) {
 	dht := &DHT{}
 
-	// c := stun.NewClient()
-	// _, h, err := stun.NewClient().Discover()
-	// if err != nil {
-	// 	return nil, err
-	// }
-
 	dht.options = options
-
-	// dht.options.IP = h.IP()
-
-	// dht.options.Port = strconv.Itoa(int(h.Port()))
-
-	// fmt.Println(dht.options.IP, dht.options.Port)
-
-	// fmt.Println("WTF", h.String(), h.TransportAddr())
 
 	ht, err := newHashTable(options)
 	if err != nil {
 		return nil, err
 	}
+
 	dht.store = store
 	dht.ht = ht
 	dht.networking = &realNetworking{}
@@ -209,7 +204,16 @@ func (dht *DHT) CreateSocket() error {
 	netMsgInit()
 	dht.networking.init(dht.ht.Self)
 
-	return dht.networking.createSocket(ip, port)
+	publicHost, publicPort, err := dht.networking.createSocket(ip, port, dht.options.UseStun, dht.options.StunAddr)
+	if err != nil {
+		return err
+	}
+
+	if dht.options.UseStun {
+		dht.ht.setSelfAddr(publicHost, publicPort)
+	}
+
+	return nil
 }
 
 // Listen begins listening on the socket for incoming messages

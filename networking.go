@@ -2,7 +2,6 @@ package kademlia
 
 import (
 	"errors"
-	"fmt"
 	"net"
 	"strconv"
 	"sync"
@@ -23,7 +22,7 @@ type networking interface {
 	timersFin()
 	getDisconnect() chan (int)
 	init(self *NetworkNode)
-	createSocket(host string, port string) error
+	createSocket(host string, port string, useStun bool, stunAddr string) (publicHost string, publicPort string, err error)
 	listen() error
 	disconnect() error
 	cancelResponse(*expectedResponse)
@@ -97,32 +96,49 @@ func (rn *realNetworking) timersFin() {
 	rn.dcTimersChan <- 1
 }
 
-func (rn *realNetworking) createSocket(host string, port string) error {
+func (rn *realNetworking) createSocket(host string, port string, useStun bool, stunAddr string) (publicHost string, publicPort string, err error) {
 	rn.mutex.Lock()
 	defer rn.mutex.Unlock()
 	if rn.connected {
-		return errors.New("already connected")
+		return "", "", errors.New("already connected")
 	}
 
-	socket, err := utp.NewSocket("udp", "["+host+"]"+":"+port)
+	remoteAddress := "[" + host + "]" + ":" + port
+
+	socket, err := utp.NewSocket("udp", remoteAddress)
 	if err != nil {
-		return err
+		return "", "", err
 	}
 
-	c := stun.NewClientWithConnection(socket)
+	if useStun {
+		c := stun.NewClientWithConnection(socket)
 
-	_, h, err := c.Discover()
-	if err != nil {
-		return err
+		if stunAddr != "" {
+			c.SetServerAddr(stunAddr)
+		}
+
+		_, h, err := c.Discover()
+		if err != nil {
+			return "", "", err
+		}
+
+		_, err = c.Keepalive()
+		if err != nil {
+			return "", "", err
+		}
+
+		host = h.IP()
+		port = strconv.Itoa(int(h.Port()))
+		remoteAddress = "[" + host + "]" + ":" + port
 	}
 
-	rn.remoteAddress = h.String()
+	rn.remoteAddress = remoteAddress
 
 	rn.connected = true
 
 	rn.socket = socket
 
-	return nil
+	return host, port, nil
 }
 
 func (rn *realNetworking) sendMessage(msg *message, expectResponse bool, id int64) (*expectedResponse, error) {
@@ -134,11 +150,8 @@ func (rn *realNetworking) sendMessage(msg *message, expectResponse bool, id int6
 	msg.ID = id
 	rn.mutex.Unlock()
 
-	fmt.Println("try connect", "["+msg.Receiver.IP.String()+"]:"+strconv.Itoa(msg.Receiver.Port))
-
 	conn, err := rn.socket.DialTimeout("["+msg.Receiver.IP.String()+"]:"+strconv.Itoa(msg.Receiver.Port), time.Second)
 	if err != nil {
-		fmt.Println(err)
 		return nil, err
 	}
 
@@ -201,7 +214,6 @@ func (rn *realNetworking) disconnect() error {
 func (rn *realNetworking) listen() error {
 	for {
 		conn, err := rn.socket.Accept()
-		fmt.Println("Got connection", conn.RemoteAddr().String(), conn.RemoteAddr().Network())
 
 		if err != nil {
 			rn.disconnect()
@@ -222,18 +234,6 @@ func (rn *realNetworking) listen() error {
 				}
 
 				isPing := msg.Type == messageTypePing
-
-				host, port, err := net.SplitHostPort(conn.RemoteAddr().String())
-				if err != nil {
-					continue
-				}
-
-				msg.Sender.IP = net.ParseIP(host)
-				portInt, err := strconv.Atoi(port)
-				if err != nil {
-					continue
-				}
-				msg.Sender.Port = portInt
 
 				if !areNodesEqual(msg.Receiver, rn.self, isPing) {
 					// TODO should we penalize this node somehow ? Ban it ?
