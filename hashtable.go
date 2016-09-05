@@ -70,22 +70,30 @@ func newHashTable(options *Options) (*hashTable, error) {
 		return nil, errors.New("Port and IP required")
 	}
 
-	for i := 0; i < b; i++ {
-		ht.resetRefreshTimeForBucket(i)
-	}
-
-	ht.Self.IP = net.ParseIP(options.IP)
-	port, err := strconv.Atoi(options.Port)
+	err := ht.setSelfAddr(options.IP, options.Port)
 	if err != nil {
 		return nil, err
 	}
-	ht.Self.Port = port
+
+	for i := 0; i < b; i++ {
+		ht.resetRefreshTimeForBucket(i)
+	}
 
 	for i := 0; i < b; i++ {
 		ht.RoutingTable = append(ht.RoutingTable, []*node{})
 	}
 
 	return ht, nil
+}
+
+func (ht *hashTable) setSelfAddr(ip string, port string) error {
+	ht.Self.IP = net.ParseIP(ip)
+	p, err := strconv.Atoi(port)
+	if err != nil {
+		return err
+	}
+	ht.Self.Port = p
+	return nil
 }
 
 func (ht *hashTable) resetRefreshTimeForBucket(bucket int) {

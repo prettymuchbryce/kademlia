@@ -25,6 +25,10 @@ func (net *mockNetworking) listen() error {
 	return nil
 }
 
+func (net *mockNetworking) getNetworkAddr() string {
+	return ""
+}
+
 func (net *mockNetworking) disconnect() error {
 	close(net.dc)
 	<-net.dcTimersChan
@@ -39,8 +43,8 @@ func (net *mockNetworking) isInitialized() bool {
 	return true
 }
 
-func (net *mockNetworking) createSocket(host string, port string) error {
-	return nil
+func (net *mockNetworking) createSocket(host string, port string, useStun bool, stunAddr string) (publicHost string, publicPort string, err error) {
+	return "", "", nil
 }
 
 func (net *mockNetworking) cancelResponse(*expectedResponse) {

@@ -2,12 +2,14 @@ package kademlia
 
 import (
 	"errors"
+	"fmt"
 	"net"
 	"strconv"
 	"sync"
 	"time"
 
 	"github.com/anacrolix/utp"
+	"github.com/ccding/go-stun/stun"
 )
 
 var (
@@ -21,11 +23,12 @@ type networking interface {
 	timersFin()
 	getDisconnect() chan (int)
 	init(self *NetworkNode)
-	createSocket(host string, port string) error
+	createSocket(host string, port string, useStun bool, stunAddr string) (publicHost string, publicPort string, err error)
 	listen() error
 	disconnect() error
 	cancelResponse(*expectedResponse)
 	isInitialized() bool
+	getNetworkAddr() string
 }
 
 type realNetworking struct {
@@ -45,6 +48,7 @@ type realNetworking struct {
 	aliveConns    *sync.WaitGroup
 	self          *NetworkNode
 	msgCounter    int64
+	remoteAddress string
 }
 
 type expectedResponse struct {
@@ -77,6 +81,10 @@ func (rn *realNetworking) getMessage() chan (*message) {
 	return rn.recvChan
 }
 
+func (rn *realNetworking) getNetworkAddr() string {
+	return rn.remoteAddress
+}
+
 func (rn *realNetworking) messagesFin() {
 	rn.dcMessageChan <- 1
 }
@@ -89,22 +97,49 @@ func (rn *realNetworking) timersFin() {
 	rn.dcTimersChan <- 1
 }
 
-func (rn *realNetworking) createSocket(host string, port string) error {
+func (rn *realNetworking) createSocket(host string, port string, useStun bool, stunAddr string) (publicHost string, publicPort string, err error) {
 	rn.mutex.Lock()
 	defer rn.mutex.Unlock()
 	if rn.connected {
-		return errors.New("already connected")
+		return "", "", errors.New("already connected")
 	}
-	socket, err := utp.NewSocket("udp", "["+host+"]"+":"+port)
+
+	remoteAddress := "[" + host + "]" + ":" + port
+
+	socket, err := utp.NewSocket("udp", remoteAddress)
 	if err != nil {
-		return err
+		return "", "", err
 	}
+
+	if useStun {
+		c := stun.NewClientWithConnection(socket)
+
+		if stunAddr != "" {
+			c.SetServerAddr(stunAddr)
+		}
+
+		_, h, err := c.Discover()
+		if err != nil {
+			return "", "", err
+		}
+
+		_, err = c.Keepalive()
+		if err != nil {
+			return "", "", err
+		}
+
+		host = h.IP()
+		port = strconv.Itoa(int(h.Port()))
+		remoteAddress = "[" + host + "]" + ":" + port
+	}
+
+	rn.remoteAddress = remoteAddress
 
 	rn.connected = true
 
 	rn.socket = socket
 
-	return nil
+	return host, port, nil
 }
 
 func (rn *realNetworking) sendMessage(msg *message, expectResponse bool, id int64) (*expectedResponse, error) {
@@ -116,7 +151,7 @@ func (rn *realNetworking) sendMessage(msg *message, expectResponse bool, id int6
 	msg.ID = id
 	rn.mutex.Unlock()
 
-	conn, err := utp.DialTimeout("["+msg.Receiver.IP.String()+"]:"+strconv.Itoa(msg.Receiver.Port), time.Second)
+	conn, err := rn.socket.DialTimeout("["+msg.Receiver.IP.String()+"]:"+strconv.Itoa(msg.Receiver.Port), time.Second)
 	if err != nil {
 		return nil, err
 	}
@@ -198,6 +233,7 @@ func (rn *realNetworking) listen() error {
 					// TODO should we penalize this node somehow ? Ban it ?
 					return
 				}
+
 				isPing := msg.Type == messageTypePing
 
 				if !areNodesEqual(msg.Receiver, rn.self, isPing) {
@@ -212,7 +248,13 @@ func (rn *realNetworking) listen() error {
 
 				rn.mutex.Lock()
 				if rn.connected {
-					if msg.IsResponse && rn.responseMap[msg.ID] != nil {
+					if msg.IsResponse {
+						if rn.responseMap[msg.ID] == nil {
+							// We were not expecting this response
+							rn.mutex.Unlock()
+							continue
+						}
+
 						if !areNodesEqual(rn.responseMap[msg.ID].node, msg.Sender, isPing) {
 							// TODO should we penalize this node somehow ? Ban it ?
 							rn.mutex.Unlock()
@@ -241,6 +283,26 @@ func (rn *realNetworking) listen() error {
 						delete(rn.responseMap, msg.ID)
 						rn.mutex.Unlock()
 					} else {
+						assertion := false
+						switch msg.Type {
+						case messageTypeFindNode:
+							_, assertion = msg.Data.(*queryDataFindNode)
+						case messageTypeFindValue:
+							_, assertion = msg.Data.(*queryDataFindValue)
+						case messageTypeStore:
+							_, assertion = msg.Data.(*queryDataStore)
+						default:
+							assertion = true
+						}
+
+						if !assertion {
+							fmt.Printf("Received bad message %v from %+v", msg.Type, msg.Sender)
+							close(rn.responseMap[msg.ID].ch)
+							delete(rn.responseMap, msg.ID)
+							rn.mutex.Unlock()
+							continue
+						}
+
 						rn.recvChan <- msg
 						rn.mutex.Unlock()
 					}

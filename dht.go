@@ -3,6 +3,7 @@ package kademlia
 import (
 	"bytes"
 	"errors"
+	"log"
 	"math"
 	"sort"
 	"sync"
@@ -28,6 +29,17 @@ type Options struct {
 
 	// The local port to listen for connections on
 	Port string
+
+	// Whether or not to use the STUN protocol to determine public IP and Port
+	// May be necessary if the node is behind a NAT
+	UseStun bool
+
+	// Specifies the the host of the STUN server. If left empty will use the
+	// default specified in go-stun.
+	StunAddr string
+
+	// A logger interface
+	Logger log.Logger
 
 	// The nodes being used to bootstrap the network. Without a bootstrap
 	// node there is no way to connect to the network. NetworkNodes can be
@@ -61,11 +73,14 @@ type Options struct {
 // provided.
 func NewDHT(store Store, options *Options) (*DHT, error) {
 	dht := &DHT{}
+
 	dht.options = options
+
 	ht, err := newHashTable(options)
 	if err != nil {
 		return nil, err
 	}
+
 	dht.store = store
 	dht.ht = ht
 	dht.networking = &realNetworking{}
@@ -172,6 +187,12 @@ func (dht *DHT) GetSelfID() string {
 	return str
 }
 
+// GetNetworkAddr returns the publicly accessible IP and Port of the local
+// node
+func (dht *DHT) GetNetworkAddr() string {
+	return dht.networking.getNetworkAddr()
+}
+
 // CreateSocket attempts to open a UDP socket on the port provided to options
 func (dht *DHT) CreateSocket() error {
 	ip := dht.options.IP
@@ -187,7 +208,16 @@ func (dht *DHT) CreateSocket() error {
 	netMsgInit()
 	dht.networking.init(dht.ht.Self)
 
-	return dht.networking.createSocket(ip, port)
+	publicHost, publicPort, err := dht.networking.createSocket(ip, port, dht.options.UseStun, dht.options.StunAddr)
+	if err != nil {
+		return err
+	}
+
+	if dht.options.UseStun {
+		dht.ht.setSelfAddr(publicHost, publicPort)
+	}
+
+	return nil
 }
 
 // Listen begins listening on the socket for incoming messages
