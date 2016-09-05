@@ -12,7 +12,7 @@ _This project has not been heavily battle-tested, and I would not recommend usin
 -  uses uTP for all network communication
 -  supports IPv4/IPv6
 -  uses a well-defined Store interface for extensibility
--  supports STUN for public address discovery
+-  supports [STUN](https://en.wikipedia.org/wiki/STUN) for public address discovery
 
 ## TODO
 - [x] Implement STUN for public address discovery
