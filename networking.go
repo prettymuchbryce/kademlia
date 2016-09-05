@@ -2,6 +2,7 @@ package kademlia
 
 import (
 	"errors"
+	"fmt"
 	"net"
 	"strconv"
 	"sync"
@@ -247,7 +248,13 @@ func (rn *realNetworking) listen() error {
 
 				rn.mutex.Lock()
 				if rn.connected {
-					if msg.IsResponse && rn.responseMap[msg.ID] != nil {
+					if msg.IsResponse {
+						if rn.responseMap[msg.ID] == nil {
+							// We were not expecting this response
+							rn.mutex.Unlock()
+							continue
+						}
+
 						if !areNodesEqual(rn.responseMap[msg.ID].node, msg.Sender, isPing) {
 							// TODO should we penalize this node somehow ? Ban it ?
 							rn.mutex.Unlock()
@@ -276,6 +283,26 @@ func (rn *realNetworking) listen() error {
 						delete(rn.responseMap, msg.ID)
 						rn.mutex.Unlock()
 					} else {
+						assertion := false
+						switch msg.Type {
+						case messageTypeFindNode:
+							_, assertion = msg.Data.(*queryDataFindNode)
+						case messageTypeFindValue:
+							_, assertion = msg.Data.(*queryDataFindValue)
+						case messageTypeStore:
+							_, assertion = msg.Data.(*queryDataStore)
+						default:
+							assertion = true
+						}
+
+						if !assertion {
+							fmt.Printf("Received bad message %v from %+v", msg.Type, msg.Sender)
+							close(rn.responseMap[msg.ID].ch)
+							delete(rn.responseMap, msg.ID)
+							rn.mutex.Unlock()
+							continue
+						}
+
 						rn.recvChan <- msg
 						rn.mutex.Unlock()
 					}

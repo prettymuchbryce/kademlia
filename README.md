@@ -15,7 +15,8 @@ _This project has not been heavily battle-tested, and I would not recommend usin
 -  supports STUN for public address discovery
 
 ## TODO
-- [ ] Load testing / Benchmarks
+- [x] Implement STUN for public address discovery
+- [ ] Load testing/Benchmarks
 - [ ] More testing around message validation
 - [ ] More testing of bad/malicious message handling
 - [ ] Banning/throttling of malicious messages/nodes
@@ -24,3 +25,4 @@ _This project has not been heavily battle-tested, and I would not recommend usin
 - [ ] Consider breaking store into two messages and transfer bulk of data over TCP
 - [ ] Implement republishing according to the xlattice design document
 - [ ] Better cleanup of unanswered expected messages
+- [ ] Logging support

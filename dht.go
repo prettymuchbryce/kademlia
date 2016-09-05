@@ -3,6 +3,7 @@ package kademlia
 import (
 	"bytes"
 	"errors"
+	"log"
 	"math"
 	"sort"
 	"sync"
@@ -36,6 +37,9 @@ type Options struct {
 	// Specifies the the host of the STUN server. If left empty will use the
 	// default specified in go-stun.
 	StunAddr string
+
+	// A logger interface
+	Logger log.Logger
 
 	// The nodes being used to bootstrap the network. Without a bootstrap
 	// node there is no way to connect to the network. NetworkNodes can be
