@@ -87,6 +87,7 @@ func (n *shortList) AppendUniqueNetworkNodes(nodes []*NetworkNode) {
 		for _, v := range n.Nodes {
 			if bytes.Compare(v.ID, vv.ID) == 0 {
 				exists = true
+				break
 			}
 		}
 		if !exists {
@@ -101,6 +102,7 @@ func (n *shortList) AppendUnique(nodes []*node) {
 		for _, v := range n.Nodes {
 			if bytes.Compare(v.ID, vv.ID) == 0 {
 				exists = true
+				break
 			}
 		}
 		if !exists {
